@@ -1,0 +1,1 @@
+This folder stores the local LLM model files used by the application (e.g., GGUF weights, tokenizer, and configuration). Keep large model files out of Git by using .gitignore and download or mount them at runtime.
