@@ -1,1 +1,1015 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Commissions Dashboard Assistant</title>
+  <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* iOS 16 Light Mode - Liquid Glass */
+      --primary-glass: rgba(255, 255, 255, 0.8);
+      --secondary-glass: rgba(255, 255, 255, 0.6);
+      --bg-light: linear-gradient(135deg, #f0f4ff 0%, #e8f0ff 25%, #f8faff 50%, #eef3ff 75%, #f5f8ff 100%);
+      --header-glass: rgba(255, 255, 255, 0.85);
+      --chat-glass: rgba(255, 255, 255, 0.4);
+      --user-glass: rgba(0, 122, 255, 0.15);
+      --bot-glass: rgba(255, 255, 255, 0.9);
+      --input-glass: rgba(255, 255, 255, 0.7);
+      --text-primary: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --text-light: #ffffff;
+      --accent: #007AFF;
+      --accent-hover: #0056CC;
+      --accent-light: rgba(0, 122, 255, 0.1);
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+      --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.12);
+      --border: 1px solid rgba(255, 255, 255, 0.3);
+      --border-strong: 1px solid rgba(255, 255, 255, 0.5);
+      --user-accent: #007AFF;
+      --user-text: #ffffff;
+    }
+    
+    .dark {
+      --primary-glass: rgba(0, 0, 0, 0.3);
+      --secondary-glass: rgba(0, 0, 0, 0.2);
+      --bg-light: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      --header-glass: rgba(0, 0, 0, 0.4);
+      --chat-glass: rgba(0, 0, 0, 0.2);
+      --user-glass: rgba(0, 0, 0, 0.4);
+      --bot-glass: rgba(0, 0, 0, 0.3);
+      --input-glass: rgba(0, 0, 0, 0.3);
+      --text-primary: #ffffff;
+      --text-secondary: #b0b0b0;
+      --text-light: #ffffff;
+      --accent: #0A84FF;
+      --accent-hover: #0056CC;
+      --accent-light: rgba(10, 132, 255, 0.1);
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.6);
+      --border: 1px solid rgba(255, 255, 255, 0.1);
+      --border-strong: 1px solid rgba(255, 255, 255, 0.2);
+      --user-accent: #0A84FF;
+      --user-text: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-light);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      position: relative;
+      overflow: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--bg-light);
+      z-index: -2;
+      animation: liquidFlow 12s ease-in-out infinite;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 20%, rgba(0, 122, 255, 0.05) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(88, 86, 214, 0.05) 0%, transparent 50%),
+                  radial-gradient(circle at 20% 80%, rgba(255, 45, 85, 0.03) 0%, transparent 50%);
+      animation: floatingOrbs 20s ease-in-out infinite;
+      z-index: -1;
+    }
+
+    @keyframes liquidFlow {
+      0%, 100% { 
+        background: var(--bg-light);
+        filter: hue-rotate(0deg) saturate(1);
+      }
+      25% { 
+        filter: hue-rotate(5deg) saturate(1.1);
+      }
+      50% { 
+        filter: hue-rotate(-3deg) saturate(0.95);
+      }
+      75% { 
+        filter: hue-rotate(8deg) saturate(1.05);
+      }
+    }
+
+    @keyframes floatingOrbs {
+      0%, 100% { transform: rotate(0deg) scale(1); }
+      33% { transform: rotate(120deg) scale(1.1); }
+      66% { transform: rotate(240deg) scale(0.9); }
+    }
+
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem 2rem;
+        background: var(--header-glass);
+        backdrop-filter: blur(40px) saturate(1.8);
+        -webkit-backdrop-filter: blur(40px) saturate(1.8);
+        color: var(--text-primary);
+        font-size: 1.5rem;
+        font-weight: 700;
+        border-bottom: var(--border);
+        box-shadow: var(--shadow);
+        animation: liquidSlideDown 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        letter-spacing: -0.02em;
+        height: 5.5rem; /* 👈 Ensures consistent vertical centering */
+        position: relative;
+    }
+
+    .header-title {
+      flex-grow: 1;
+    }
+
+    @keyframes liquidSlideDown {
+      from { 
+        transform: translateY(-100%) scale(0.95); 
+        opacity: 0; 
+        filter: blur(10px);
+      }
+      to { 
+        transform: translateY(0) scale(1); 
+        opacity: 1; 
+        filter: blur(0);
+      }
+    }
+
+    .toggle-btn {
+        position: absolute;
+        right: 2rem;
+        top: 50%;
+        transform: translateY(-50%) scale(1);
+        background: var(--primary-glass);
+        backdrop-filter: blur(20px) saturate(1.5);
+        border: var(--border-strong);
+        color: var(--text-primary);
+        padding: 0.8rem 1.5rem;
+        border-radius: 50px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        box-shadow: var(--shadow);
+    }
+
+    .toggle-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .toggle-btn:hover::before {
+      transform: translateX(100%);
+    }
+
+    .toggle-btn:hover {
+      transform: translateY(-50%) scale(1.05);
+      box-shadow: var(--shadow-hover);
+      background: var(--secondary-glass);
+    }
+
+    .toggle-btn:active {
+      transform: translateY(-50%) scale(0.98);
+      transition: all 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .upload-area {
+      padding: 1.5rem 2rem;
+      background: var(--header-glass);
+      backdrop-filter: blur(40px) saturate(1.8);
+      -webkit-backdrop-filter: blur(40px) saturate(1.8);
+      border-bottom: var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      animation: liquidSlideIn 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    @keyframes liquidSlideIn {
+      from { 
+        transform: translateX(-100%) scale(0.95); 
+        opacity: 0; 
+        filter: blur(10px);
+      }
+      to { 
+        transform: translateX(0) scale(1); 
+        opacity: 1; 
+        filter: blur(0);
+      }
+    }
+
+    .upload-btn {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+      color: white;
+      border: none;
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      box-shadow: var(--shadow), 0 0 20px rgba(0, 122, 255, 0.2);
+      font-size: 0.95rem;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .upload-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .upload-btn:hover::before {
+      transform: translateX(100%);
+    }
+
+    .upload-btn:hover {
+      transform: translateY(-3px) scale(1.02) translateZ(0);
+      box-shadow: var(--shadow-hover), 0 0 30px rgba(0, 122, 255, 0.3);
+    }
+
+    .upload-btn:active {
+      transform: translateY(-1px) scale(0.98) translateZ(0);
+      transition: all 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    #uploadStatus {
+      color: var(--text-primary);
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(20px) scale(0.9);
+      transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      background: var(--accent-light);
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    #uploadStatus.show {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    #chatbox {
+      flex: 1;
+      padding: 2rem;
+      overflow-y: auto;
+      background: var(--chat-glass);
+      backdrop-filter: blur(20px) saturate(1.2);
+      -webkit-backdrop-filter: blur(20px) saturate(1.2);
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      scroll-behavior: smooth;
+    }
+
+    #chatbox::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #chatbox::-webkit-scrollbar-track {
+      background: var(--secondary-glass);
+      border-radius: 10px;
+    }
+
+    #chatbox::-webkit-scrollbar-thumb {
+      background: var(--primary-glass);
+      border-radius: 10px;
+      transition: background 0.3s ease;
+    }
+
+    #chatbox::-webkit-scrollbar-thumb:hover {
+      background: var(--accent);
+    }
+
+    .message {
+      max-width: 75%;
+      padding: 1.2rem 1.8rem;
+      border-radius: 25px;
+      opacity: 0;
+      animation: liquidMessageSlide 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+      line-height: 1.6;
+      font-weight: 400;
+      backdrop-filter: blur(30px) saturate(1.5);
+      -webkit-backdrop-filter: blur(30px) saturate(1.5);
+      border: var(--border);
+      box-shadow: var(--shadow);
+      position: relative;
+      transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      font-size: 0.95rem;
+      /* NEW: Fallback to respect newlines/whitespace if not replaced with <br> */
+      white-space: pre-line;
+    }
+
+    .message::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+      border-radius: 25px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .message:hover::before {
+      opacity: 1;
+    }
+
+    .message:hover {
+      transform: translateY(-4px) scale(1.02) translateZ(0);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .message:active {
+      transform: translateY(-2px) scale(0.98) translateZ(0);
+      transition: all 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    @keyframes liquidMessageSlide {
+      from {
+        opacity: 0;
+        transform: translateY(40px) scale(0.9) rotateX(10deg);
+        filter: blur(5px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1) rotateX(0deg);
+        filter: blur(0);
+      }
+    }
+
+    .user {
+      background: linear-gradient(135deg, var(--user-accent) 0%, var(--accent-hover) 100%);
+      color: var(--user-text);
+      align-self: flex-end;
+      border-bottom-right-radius: 8px;
+      box-shadow: var(--shadow), 0 0 20px rgba(0, 122, 255, 0.2);
+    }
+
+    .bot {
+      background: var(--bot-glass);
+      color: var(--text-primary);
+      align-self: flex-start;
+      border-bottom-left-radius: 8px;
+    }
+
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      padding: 1.2rem 1.8rem;
+      background: var(--bot-glass);
+      backdrop-filter: blur(30px) saturate(1.5);
+      -webkit-backdrop-filter: blur(30px) saturate(1.5);
+      border-radius: 25px;
+      border-bottom-left-radius: 8px;
+      align-self: flex-start;
+      max-width: 75%;
+      border: var(--border);
+      box-shadow: var(--shadow);
+      animation: liquidMessageSlide 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    }
+
+    .typing-text {
+      color: var(--text-primary);
+      font-weight: 500;
+      margin-right: 0.5rem;
+    }
+
+    .typing-dots {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      background: linear-gradient(45deg, var(--accent), var(--accent-hover));
+      border-radius: 50%;
+      animation: liquidTypingBounce 1.6s infinite ease-in-out;
+      box-shadow: 0 0 10px rgba(0, 122, 255, 0.3);
+    }
+
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+    .dot:nth-child(3) { animation-delay: 0s; }
+
+    @keyframes liquidTypingBounce {
+      0%, 80%, 100% {
+        transform: scale(0.6) translateY(0);
+        opacity: 0.6;
+      }
+      40% {
+        transform: scale(1.2) translateY(-8px);
+        opacity: 1;
+      }
+    }
+
+    .input-area {
+      display: flex;
+      padding: 1.5rem 2rem;
+      background: var(--input-glass);
+      backdrop-filter: blur(40px) saturate(1.8);
+      -webkit-backdrop-filter: blur(40px) saturate(1.8);
+      border-top: var(--border);
+      gap: 1.5rem;
+      animation: liquidSlideUp 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    @keyframes liquidSlideUp {
+      from { 
+        transform: translateY(100%) scale(0.95); 
+        opacity: 0; 
+        filter: blur(10px);
+      }
+      to { 
+        transform: translateY(0) scale(1); 
+        opacity: 1; 
+        filter: blur(0);
+      }
+    }
+
+    .input-container {
+      flex: 1;
+      position: relative;
+    }
+
+    .input-area input {
+      width: 100%;
+      padding: 1.2rem 1.8rem;
+      border: var(--border-strong);
+      border-radius: 50px;
+      outline: none;
+      font-size: 1rem;
+      color: var(--text-primary);
+      background: var(--secondary-glass);
+      backdrop-filter: blur(20px) saturate(1.3);
+      -webkit-backdrop-filter: blur(20px) saturate(1.3);
+      transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      box-shadow: var(--shadow);
+      font-weight: 400;
+    }
+
+    .input-area input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1), var(--shadow-hover);
+      transform: translateY(-2px) scale(1.01) translateZ(0);
+      background: var(--primary-glass);
+    }
+
+    .input-area input::placeholder {
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    .send-btn {
+      padding: 1.2rem 2.5rem;
+      border: none;
+      border-radius: 50px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      font-size: 1rem;
+      box-shadow: var(--shadow), 0 0 20px rgba(0, 122, 255, 0.2);
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .send-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .send-btn:hover::before {
+      transform: translateX(100%);
+    }
+
+    .send-btn:hover {
+      transform: translateY(-3px) scale(1.02) translateZ(0);
+      box-shadow: var(--shadow-hover), 0 0 30px rgba(0, 122, 255, 0.3);
+    }
+
+    .send-btn:active {
+      transform: translateY(-1px) scale(0.98) translateZ(0);
+      transition: all 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .send-btn:disabled:hover {
+      transform: none;
+      box-shadow: var(--shadow);
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .interactive-glow {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .interactive-glow::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.09) 0%, transparent 70%);
+      transform: translate(-50%, -50%);
+      transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      pointer-events: none;
+    }
+
+    .interactive-glow:hover::after {
+      width: 200px;
+      height: 200px;
+    }
+
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        align-items: flex-start;;
+      }
+      
+      .toggle-btn {
+        margin-top: 0.8rem;
+        align-self: flex-end;
+      }
+      
+      .upload-area {
+        padding: 1rem 1.5rem;
+      }
+      
+      #chatbox {
+        padding: 1rem;
+        gap: 1rem;
+      }
+      
+      .message {
+        max-width: 85%;
+        padding: 1rem 1.4rem;
+      }
+      
+      .input-area {
+        padding: 1rem 1.5rem;
+      }
+      
+      .input-area input {
+        padding: 1rem 1.4rem;
+        font-size: 0.95rem;
+      }
+      
+      .send-btn {
+        padding: 1rem 2rem;
+        font-size: 0.95rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span>Commissions Dashboard Assistant</span>   
+    <button class="toggle-btn interactive-glow" onclick="toggleTheme()">🌙 Dark Mode</button>
+  </div>
+  
+  <div class="upload-area">
+    <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.csv,.xlsx" />
+    <button class="upload-btn interactive-glow" onclick="triggerFileUpload()">📁 Upload Documents</button>
+    <span id="uploadStatus"></span>
+  </div>
+  
+  <div id="chatbox">
+    <div class="message bot">
+      <strong>Assistant:</strong> Hi! I'm here to help analyze, summarize, and answer questions about your documents. 
+    </div>
+  </div>
+  
+  <div class="input-area">
+    <div class="input-container">
+      <input id="userInput" type="text" placeholder="Ask me anything about your documents..." onkeypress="handleKeyPress(event)" />
+    </div>
+    <button class="send-btn interactive-glow" onclick="sendMessage()">Send 🚀</button>
+  </div>
+
+  <script>
+    // --- ADDITION: Unique user ID for session tracking ---
+    const userId = Math.floor(Math.random() * 1000000) + '_' + Date.now();
+
+    // The rest of your original script is preserved below
+    let isTyping = false;
+    let typingTimeout;
+
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+      const btn = document.querySelector('.toggle-btn');
+      const isDark = document.body.classList.contains('dark');
+      btn.textContent = isDark ? '☀️ Light Mode' : '🌙 Dark Mode';
+      
+      btn.style.transform = 'translateY(-50%) scale(0.95)';
+      setTimeout(() => {
+        btn.style.transform = 'translateY(-50%) scale(1)';
+      }, 100);
+    }
+
+    // NEW: Helper function to format text by replacing \n with <br> for line breaks
+    function formatText(text) {
+      return text.replace(/\n/g, '<br>');
+    }
+
+    function addMessage(sender, text) {
+      const chatbox = document.getElementById('chatbox');
+      const message = document.createElement('div');
+      message.className = `message ${sender}`;
+      
+      // UPDATED: Format the text to handle newlines before inserting
+      const formattedText = formatText(text);
+      
+      if (sender === 'bot') {
+        message.innerHTML = `<strong>Assistant:</strong> ${formattedText}`;
+      } else {
+        message.innerHTML = `<strong>You:</strong> ${formattedText}`;
+      }
+      
+      chatbox.appendChild(message);
+      chatbox.scrollTop = chatbox.scrollHeight;
+      
+      message.addEventListener('mouseenter', () => {
+        message.style.transform = 'translateY(-4px) scale(1.02) translateZ(0)';
+      });
+      
+      message.addEventListener('mouseleave', () => {
+        message.style.transform = 'translateY(0) scale(1) translateZ(0)';
+      });
+      
+      setTimeout(() => {
+        message.style.animationDelay = '0.1s';
+      }, 50);
+    }
+
+    function showTypingIndicator() {
+      if (isTyping) return;
+      
+      isTyping = true;
+      const chatbox = document.getElementById('chatbox');
+      const typingDiv = document.createElement('div');
+      typingDiv.className = 'typing-indicator';
+      typingDiv.id = 'typingIndicator';
+      
+      typingDiv.innerHTML = `
+        <span class="typing-text">Assistant is thinking</span>
+        <div class="typing-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      `;
+      
+      chatbox.appendChild(typingDiv);
+      chatbox.scrollTop = chatbox.scrollHeight;
+    }
+
+    function hideTypingIndicator() {
+      isTyping = false;
+      const typingDiv = document.getElementById('typingIndicator');
+      if (typingDiv) {
+        typingDiv.style.opacity = '0';
+        typingDiv.style.transform = 'translateY(20px) scale(0.9)';
+        setTimeout(() => {
+          typingDiv.remove();
+        }, 300);
+      }
+    }
+
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      // Add ripple effect to input
+      const ripple = document.createElement('div');
+      ripple.style.cssText = `
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        background: radial-gradient(circle, rgba(0, 122, 255, 0.3) 0%, transparent 70%);
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        pointer-events: none;
+        animation: rippleEffect 0.6s ease-out;
+      `;
+      
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes rippleEffect {
+          to {
+            width: 200px;
+            height: 200px;
+            opacity: 0;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+      
+      input.parentElement.appendChild(ripple);
+      setTimeout(() => {
+        ripple.remove();
+        style.remove();
+      }, 600);
+
+      addMessage('user', text);
+      input.value = '';
+
+      // Enhanced button feedback
+      const sendBtn = document.querySelector('.send-btn');
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending...';
+      sendBtn.style.transform = 'translateY(-1px) scale(0.98)';
+
+      showTypingIndicator();
+
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, user_id: userId }) // Pass userId here
+        });
+
+        const data = await response.json();
+        
+        setTimeout(() => {
+          hideTypingIndicator();
+          setTimeout(() => {
+            addMessage('bot', data.response);
+          }, 200);
+          
+          // Reset send button with animation
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Send 🚀';
+          sendBtn.style.transform = 'translateY(-3px) scale(1.02)';
+          setTimeout(() => {
+            sendBtn.style.transform = 'translateY(0) scale(1)';
+          }, 200);
+        }, 1000 + Math.random() * 1000); // Random delay between 1-2 seconds
+        
+      } catch (error) {
+        hideTypingIndicator();
+        addMessage('bot', 'Sorry, I encountered an error. Please try again.');
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send 🚀';
+        sendBtn.style.transform = 'translateY(0) scale(1)';
+      }
+    }
+
+    function triggerFileUpload() {
+      const uploadBtn = document.querySelector('.upload-btn');
+      
+      // Enhanced click animation
+      uploadBtn.style.transform = 'translateY(-1px) scale(0.98)';
+      setTimeout(() => {
+        uploadBtn.style.transform = 'translateY(-3px) scale(1.02)';
+      }, 100);
+      
+      document.getElementById('fileInput').click();
+    }
+
+    async function uploadFiles() {
+      const input = document.getElementById('fileInput');
+      const files = input.files;
+      
+      if (!files.length) return;
+
+      const uploadStatus = document.getElementById('uploadStatus');
+      uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
+      uploadStatus.classList.add('show');
+
+      // Add progress animation
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += Math.random() * 20;
+        if (progress > 90) {
+          clearInterval(progressInterval);
+          return;
+        }
+        uploadStatus.textContent = `Uploading ${files.length} file(s)... ${Math.round(progress)}%`;
+      }, 200);
+
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append('files', file);
+      }
+
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        
+        clearInterval(progressInterval);
+        uploadStatus.textContent = `✅ Successfully uploaded ${files.length} file(s)`;
+        uploadStatus.style.background = 'linear-gradient(135deg, rgba(52, 199, 89, 0.2), rgba(48, 176, 199, 0.2))';
+        
+        addMessage('bot', `Great! I've successfully processed your ${files.length} file(s). ${data.message} Feel free to ask me any questions about your documents! 📄✨`);
+        
+        input.value = '';
+        
+        setTimeout(() => {
+          uploadStatus.classList.remove('show');
+          uploadStatus.style.background = 'var(--accent-light)';
+        }, 3000);
+        
+      } catch (error) {
+        clearInterval(progressInterval);
+        uploadStatus.textContent = '❌ Upload failed. Please try again.';
+        uploadStatus.style.background = 'linear-gradient(135deg, rgba(255, 59, 48, 0.2), rgba(255, 149, 0, 0.2))';
+        
+        addMessage('bot', 'Sorry, there was an error uploading your files. Please try again.');
+        
+        setTimeout(() => {
+          uploadStatus.classList.remove('show');
+          uploadStatus.style.background = 'var(--accent-light)';
+        }, 3000);
+      }
+    }
+
+    // Enhanced interactive elements
+    function addInteractiveEffects() {
+      const interactiveElements = document.querySelectorAll('.interactive-glow');
+      
+      interactiveElements.forEach(element => {
+        element.addEventListener('mouseenter', (e) => {
+          const rect = element.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          
+          element.style.setProperty('--mouse-x', x + 'px');
+          element.style.setProperty('--mouse-y', y + 'px');
+        });
+        
+        element.addEventListener('click', (e) => {
+          const rect = element.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          
+          const ripple = document.createElement('div');
+          ripple.style.cssText = `
+            position: absolute;
+            top: ${y}px;
+            left: ${x}px;
+            width: 0;
+            height: 0;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 0%, transparent 70%);
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: clickRipple 0.6s ease-out;
+          `;
+          
+          element.appendChild(ripple);
+          
+          setTimeout(() => {
+            ripple.remove();
+          }, 600);
+        });
+      });
+    }
+
+    // Add click ripple animation
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes clickRipple {
+        to {
+          width: 300px;
+          height: 300px;
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Auto-upload when files are selected
+    document.getElementById('fileInput').addEventListener('change', uploadFiles);
+
+    // Enhanced initialization
+    window.addEventListener('load', () => {
+      addInteractiveEffects();
+      
+      // Staggered welcome messages
+      setTimeout(() => {
+        addMessage('bot', 'Ready to help! You can start by uploading some documents or asking me a question. 🎯');
+      }, 1000);
+      
+    // setTimeout(() => {
+      //  addMessage('bot', 'I support PDF, Word, Excel, CSV, and text files. Just drag and drop or click upload! 📁');
+      //}, 2500);
+    });
+
+    // Add smooth scrolling enhancement
+    document.getElementById('chatbox').addEventListener('scroll', () => {
+      const messages = document.querySelectorAll('.message');
+      messages.forEach(message => {
+        const rect = message.getBoundingClientRect();
+        const chatboxRect = document.getElementById('chatbox').getBoundingClientRect();
+        const visibility = Math.max(0, Math.min(1, (chatboxRect.bottom - rect.top) / rect.height));
+        
+        message.style.opacity = Math.max(0.3, visibility);
+        message.style.transform = `translateY(${(1 - visibility) * 20}px) scale(${0.95 + visibility * 0.05})`;
+      });
+    });
+
+    // Enhanced focus management
+    document.getElementById('userInput').addEventListener('focus', () => {
+      document.getElementById('userInput').style.background = 'var(--primary-glass)';
+    });
+
+    document.getElementById('userInput').addEventListener('blur', () => {
+      document.getElementById('userInput').style.background = 'var(--secondary-glass)';
+    });
+
+    // Add subtle parallax effect to background
+    window.addEventListener('mousemove', (e) => {
+      const x = e.clientX / window.innerWidth;
+      const y = e.clientY / window.innerHeight;
+      
+      document.body.style.setProperty('--mouse-x', x);
+      document.body.style.setProperty('--mouse-y', y);
+      
+      // Subtle parallax movement
+      const parallaxElements = document.querySelectorAll('.header, .upload-area, .input-area');
+      parallaxElements.forEach(element => {
+        const speed = 0.5;
+        const xMove = (x - 0.5) * speed;
+        const yMove = (y - 0.5) * speed;
+        element.style.transform = `translate(${xMove}px, ${yMove}px)`;
+      });
+    });
+  </script>
+</body>
+</html>
+
