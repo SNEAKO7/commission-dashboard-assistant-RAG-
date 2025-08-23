@@ -9,6 +9,11 @@ from flask import Flask, request, jsonify, render_template, session, send_from_d
 from flask_session import Session
 from dotenv import load_dotenv
 import requests
+#from final_mcp_client import mcp_client
+from improved_mcp_client import execute_query, format_query_response
+from improved_mcp_client import mcp_client
+
+
 
 # Import RAG functionality
 from rag import retrieve_context, clear_vector_cache
@@ -18,7 +23,7 @@ load_dotenv()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=LOG_LEVEL)
+logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -81,6 +86,71 @@ def is_plan_creation_intent(message: str) -> bool:
     
     logger.info("🤔 No plan creation intent detected - will use RAG")
     return False
+
+def is_database_query_intent(message: str) -> bool:
+    """
+    Determine if the user wants to query the database
+    """
+    if not is_database_enabled():
+        return False
+    
+    message_lower = message.lower().strip()
+    
+    # Database query keywords
+    db_keywords = [
+        "show", "list", "find", "get", "what", "how many", "count",
+        "total", "sum", "average", "when", "who", "active plan", "current plan",
+        "commission", "payment", "employee", "program", "rule", "condition",
+        "tier", "range", "schedule", "assignment", "paid", "amount"
+    ]
+    
+    # Check if message contains database entities (use schema)
+    try:
+        schema = mcp_client.get_database_schema()
+        if schema:
+            # Check for table names in message
+            for table_name in schema.keys():
+                table_words = table_name.replace('_', ' ').split()
+                for word in table_words:
+                    if word in message_lower and len(word) > 3:
+                        logger.info(f"🎯 Database query intent detected: table '{table_name}' reference found")
+                        return True
+    except Exception as e:
+        logger.debug(f"Schema check failed in intent detection: {e}")
+    
+    # Check for database query keywords
+    for keyword in db_keywords:
+        if keyword in message_lower:
+            # Make sure it's not a plan creation intent
+            if not is_plan_creation_intent(message):
+                logger.info(f"🎯 Database query intent detected: '{keyword}' found in message")
+                return True
+    
+    return False
+
+def is_database_enabled():
+    try:
+        from improved_mcp_client import execute_query
+        return True
+    except ImportError:
+        return False
+
+def handle_database_query(user_message: str) -> str:
+    """
+    Handle database queries using improved MCP client 
+    """
+    try:
+        # Execute the natural language query using the improved MCP/NL→SQL flow
+        result = execute_query(user_message)
+
+        # Format for pretty printing, safe for end user
+        formatted_response = format_query_response(result)
+        return formatted_response
+
+    except Exception as e:
+        logger.error(f"❌ [DB] Error processing database query: {e}")
+        return f"Sorry, I encountered an error while querying the database: {str(e)}"
+
 
 # --- RAG QUERY HANDLER - SIMPLIFIED SINCE rag.py NOW HANDLES CLEAN RESPONSES ---
 def handle_rag_query(user_message: str) -> str:
@@ -1452,6 +1522,20 @@ def chat_endpoint():
             save_user_state(user_id, dict(session))
         return jsonify({"response": "Started plan creation. Please enter Plan Name:"})
     
+    if is_database_query_intent(user_msg):
+        logger.info("🗄️ [DB] Processing database query")
+        try:
+            db_response = handle_database_query(user_msg)
+            
+            # persist session state if requested
+            if user_id:
+                save_user_state(user_id, dict(session))
+            
+            return jsonify({"response": db_response})
+            
+        except Exception as e:
+            logger.error(f"❌ [DB] Error in database processing: {e}")
+
     # Fall back to RAG for general queries
     logger.info("🧠 [RAG] Processing general query")
     try:
@@ -1509,6 +1593,34 @@ def test_api_connectivity():
     except Exception as e:
         return jsonify({"error": str(e), "api_base_url": API_BASE_URL})
 
+@app.route("/_test_db", methods=["GET"])
+def test_db_connectivity():
+    """Test endpoint to check database connectivity"""
+    try:
+        if not mcp_client.is_enabled():
+            return jsonify({"error": "Database queries are disabled"})
+        
+        # Test schema loading
+        schema = mcp_client.get_database_schema()
+        
+        if schema:
+            table_count = len(schema.keys())
+            table_names = list(schema.keys())[:5]  # First 5 tables
+            
+            return jsonify({
+                "database_host": os.getenv('DB_HOST', 'not_set'),
+                "database_name": os.getenv('DB_NAME', 'not_set'),
+                "schema_loaded": True,
+                "table_count": table_count,
+                "sample_tables": table_names,
+                "status": "success"
+            })
+        else:
+            return jsonify({"error": "Failed to load database schema"})
+            
+    except Exception as e:
+        return jsonify({"error": str(e), "status": "failed"})
+    
 # --- Clear vector cache endpoint ---
 @app.route("/_clear_cache", methods=["POST"])
 def clear_cache_endpoint():
@@ -1525,4 +1637,3 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     logger.info(f"🚀 Flask running on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
