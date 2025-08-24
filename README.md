@@ -10,19 +10,19 @@
 
 ## 🎯 Executive Summary
 
-An enterprise-grade AI assistant for commission plan management, featuring state-of-the-art **Retrieval-Augmented Generation (RAG)** with **Model Context Protocol (MCP)** PostgreSQL server integration. This solution combines conversational AI, document intelligence, database operations, and seamless API orchestration to revolutionize commission management workflows.
+An enterprise-grade AI assistant for commission plan management, featuring state-of-the-art **Retrieval-Augmented Generation (RAG)** with **Model Context Protocol (MCP)** PostgreSQL server integration. This solution combines conversational AI, document intelligence, secure read-only database operations, and seamless API orchestration to revolutionize commission management workflows.
 
 ### 🔥 What's New in This Version
-- **MCP PostgreSQL Server**: Full-featured MCP server with PostgreSQL database integration
-- **Enhanced Security**: SQL injection protection and secure query handling
+- **MCP PostgreSQL Server**: Read-only MCP server with secure PostgreSQL database integration
+- **Enhanced Security**: SQL injection protection and SELECT-only query handling
 - **Dual MCP Clients**: Standard and improved clients for flexible integration
-- **Database Utilities**: Comprehensive database management and testing tools
+- **Database Utilities**: Comprehensive database querying and schema access tools
 - **Production-Ready Architecture**: Enterprise-grade error handling, logging, and security
 
 ## 🌟 Core Features
 
 ### AI & Intelligence Layer
-- **🤖 MCP PostgreSQL Integration**: Standards-compliant Model Context Protocol server for database operations
+- **🤖 MCP PostgreSQL Integration**: Standards-compliant Model Context Protocol server for secure read-only database operations
 - **📚 Advanced RAG System**: Hybrid retrieval with semantic understanding and document intelligence
 - **🧠 Multi-Model Support**: Flexible LLM integration (OpenAI, Anthropic, local models)
 - **💬 Conversational Memory**: Context-aware dialogue management with session persistence
@@ -34,9 +34,9 @@ An enterprise-grade AI assistant for commission plan management, featuring state
 - **📈 Business Logic Engine**: Support for multiple calculation types (Flat/Slab/Tiered)
 
 ### Database & Security
-- **🔐 SQL Security Layer**: Protection against SQL injection and malicious queries
-- **🗄️ PostgreSQL Integration**: Direct database operations through MCP protocol
-- **🔍 Intelligent Query Builder**: Safe and optimized SQL generation
+- **🔐 SQL Security Layer**: Protection against SQL injection with SELECT-only operations
+- **🗄️ PostgreSQL Integration**: Secure read-only database operations through MCP protocol
+- **🔍 Intelligent Query Builder**: Safe and optimized SQL generation for data retrieval
 - **📊 Database Analytics**: Real-time insights and reporting capabilities
 
 ### Document Intelligence
@@ -58,7 +58,7 @@ graph TB
     subgraph "MCP Server Layer"
         MCPServer[MCP PostgreSQL Server]
         Protocol[Protocol Handler]
-        Security[SQL Security Layer]
+        Security[SQL Security Layer - SELECT Only]
     end
     
     subgraph "Application Core"
@@ -108,25 +108,25 @@ commission-dashboard-assistant-RAG/
 │   └── 📄 requirements.txt            # Python dependencies
 │
 ├── 🤖 MCP Integration Files
-│   ├── 📄 mcp_postgres_server.py      # MCP PostgreSQL server implementation
+│   ├── 📄 mcp_postgres_server.py      # MCP PostgreSQL server implementation (SELECT-only)
 │   ├── 📄 mcp_client.py               # Standard MCP client
-│   ├── 📄 improved_mcp_client.py      # Enhanced MCP client with advanced features
+│   ├── 📄 improved_mcp_client.py      # Enhanced MCP client with logging and formatting
 │   └── 📄 setup_mcp.py                # MCP configuration and setup script
 │
 ├── 🗄️ Database Management
-│   ├── 📄 final_db_utils.py          # Database utility functions
-│   ├── 📄 sql_security.py            # SQL injection protection & security
-│   └── 📄 test_db.py                  # Database testing and validation
+│   ├── 📄 final_db_utils.py          # Database utility functions (querying & schema access)
+│   ├── 📄 sql_security.py            # SQL injection protection & SELECT-only enforcement
+│   └── 📄 test_db.py                  # Basic database connection and query testing
 │
 ├── 🎨 Frontend
 │   └── 📁 templates/                  # HTML templates
 │       └── index.html                 # Main web interface
 │
-├── 📊 Data Storage
+├── 📊 Data Storage (create if needed)
 │   ├── 📁 data/                       # Document storage directory
 │   │   ├── 📄 README.md              # Data directory documentation
 │   │   └── 📄 .gitkeep               # Git placeholder
-│   └── 📁 model/                      # Model cache directory
+│   └── 📁 model/                      # Model cache directory (create if needed)
 │       ├── 📄 README.md              # Model directory documentation
 │       └── 📄 .gitkeep               # Git placeholder
 │
@@ -158,7 +158,7 @@ The main application server handling HTTP requests and orchestrating the entire 
 - CORS configuration for cross-origin requests
 - Comprehensive error handling and logging
 - Request/response validation
-- Integration with PostgreSQL through MCP
+- Integration with PostgreSQL through MCP (read-only)
 
 #### `rag.py` - RAG Pipeline Engine
 Implements the Retrieval-Augmented Generation pipeline with advanced document processing.
@@ -187,62 +187,58 @@ Implements the Retrieval-Augmented Generation pipeline with advanced document pr
 ### MCP Integration Files
 
 #### `mcp_postgres_server.py` - MCP PostgreSQL Server
-Full-featured Model Context Protocol server with PostgreSQL database integration.
+Secure Model Context Protocol server with read-only PostgreSQL database integration.
 
 **Architecture:**
 - `MCPPostgreSQLServer`: Main server class handling MCP protocol
 - `DatabaseConnection`: PostgreSQL connection management
-- `QueryExecutor`: Safe SQL query execution
+- `QueryExecutor`: Safe SQL query execution (SELECT-only)
 - `ResponseFormatter`: MCP-compliant response formatting
 
-**Supported Operations:**
+**Current Supported Operations:**
 - `query`: Execute SELECT queries with result streaming
-- `execute`: Run INSERT, UPDATE, DELETE operations
 - `schema`: Retrieve database schema information
-- `transaction`: Handle multi-statement transactions
-- `backup`: Create database backups
-- `restore`: Restore from backups
 
 **Security Features:**
-- SQL injection prevention
+- SQL injection prevention through `sql_security.py`
+- SELECT-only query enforcement (all modification operations blocked)
 - Query validation and sanitization
-- Role-based access control
-- Audit logging for all operations
 - Connection pooling and management
+- Audit logging for all operations
+
+**Note**: Only SELECT queries are currently supported. INSERT, UPDATE, DELETE, and other modification operations are blocked by the security layer for safety.
 
 #### `mcp_client.py` - Standard MCP Client
 Basic MCP client for interacting with the PostgreSQL server.
 
 **Core Functions:**
 - `connect()`: Establish connection to MCP server
-- `send_request()`: Send JSON-RPC requests
+- `send_request()`: Send MCP protocol requests
 - `receive_response()`: Handle server responses
 - `execute_tool()`: Invoke MCP tools
 - `close()`: Clean connection closure
 
 **Features:**
-- JSON-RPC 2.0 protocol implementation
+- MCP protocol implementation
 - Automatic reconnection on failure
 - Request/response logging
 - Error handling and retry logic
 
 #### `improved_mcp_client.py` - Enhanced MCP Client
-Advanced MCP client with additional features and optimizations.
+Enhanced MCP client with additional logging and response formatting.
 
-**Enhanced Features:**
+**Current Features:**
+- Enhanced logging and debugging capabilities
+- Improved response formatting
+- Better error handling and status reporting
+- Synchronous operation support
+
+**Planned Features:**
 - **Async Operations**: Non-blocking database queries
 - **Connection Pooling**: Efficient connection management
 - **Batch Operations**: Execute multiple queries in one request
 - **Streaming Results**: Handle large result sets efficiently
 - **Caching Layer**: Query result caching for performance
-- **Monitoring**: Performance metrics and query statistics
-
-**Advanced Functions:**
-- `async_query()`: Asynchronous query execution
-- `batch_execute()`: Run multiple operations atomically
-- `stream_results()`: Stream large result sets
-- `get_query_plan()`: Analyze query execution plans
-- `monitor_performance()`: Track query performance metrics
 
 #### `setup_mcp.py` - MCP Setup Script
 Configuration and initialization script for MCP components.
@@ -265,30 +261,31 @@ Configuration and initialization script for MCP components.
 ### Database Management Files
 
 #### `final_db_utils.py` - Database Utilities
-Comprehensive database management utilities for the application.
+Database utility functions focused on querying and schema access.
 
-**Utility Functions:**
-- `create_tables()`: Initialize database schema
-- `migrate_schema()`: Handle schema migrations
-- `seed_data()`: Load initial data
-- `backup_database()`: Create database backups
-- `restore_database()`: Restore from backups
-- `optimize_indexes()`: Database performance optimization
-- `cleanup_old_data()`: Data retention management
+**Current Utility Functions:**
+- `create_connection()`: Establish secure database connections
+- `get_schema_info()`: Retrieve database schema information
+- `safe_query_builder()`: Build safe SELECT queries
+- `validate_table_access()`: Verify table access permissions
 
 **Commission Plan Functions:**
-- `save_plan()`: Store commission plans in database
 - `retrieve_plan()`: Fetch plan details
-- `update_plan()`: Modify existing plans
-- `delete_plan()`: Remove plans
 - `search_plans()`: Query plans with filters
-- `calculate_commissions()`: Execute commission calculations
+- `get_commission_data()`: Retrieve commission information
+- `analyze_performance()`: Generate performance reports
+
+**Planned Features:**
+- Schema migrations and version management
+- Database backup and restore utilities
+- Data cleanup and maintenance tools
+- Advanced optimization utilities
 
 #### `sql_security.py` - SQL Security Layer
-Comprehensive SQL injection protection and query validation.
+Comprehensive SQL injection protection and SELECT-only enforcement.
 
 **Security Functions:**
-- `validate_query()`: Check queries for malicious patterns
+- `validate_query()`: Check queries for malicious patterns and enforce SELECT-only
 - `sanitize_input()`: Clean user inputs
 - `escape_parameters()`: Proper parameter escaping
 - `check_permissions()`: Verify user permissions
@@ -297,50 +294,50 @@ Comprehensive SQL injection protection and query validation.
 
 **Protection Features:**
 - Pattern-based SQL injection detection
-- Parameterized query enforcement
+- **SELECT-only query enforcement** (blocks INSERT/UPDATE/DELETE/DROP)
 - Input validation and sanitization
 - Query complexity limits
 - Rate limiting for database operations
 - Audit trail for compliance
 
 #### `test_db.py` - Database Testing
-Comprehensive testing suite for database operations.
+Basic database connection and query testing.
 
-**Test Categories:**
+**Current Test Coverage:**
 - `test_connection()`: Verify database connectivity
-- `test_crud_operations()`: Test Create, Read, Update, Delete
-- `test_transactions()`: Validate transaction handling
-- `test_security()`: Security and injection tests
-- `test_performance()`: Performance benchmarks
-- `test_mcp_integration()`: MCP server tests
+- `test_environment()`: Validate environment variable loading
+- `test_basic_query()`: Test simple SELECT queries on plan_master table
 
-**Testing Features:**
-- Unit tests for all database functions
-- Integration tests with MCP server
+**Planned Test Expansion:**
+- Comprehensive CRUD operation tests
+- Security vulnerability testing
 - Performance benchmarking
 - Load testing capabilities
-- Security vulnerability scanning
-- Test data generation
+- MCP integration testing
 
 ### Frontend Files
 
 #### `templates/index.html` - Web Interface
-Modern, responsive web interface for the commission dashboard assistant.
+Clean, functional web interface for the commission dashboard assistant.
 
-**UI Components:**
-- **Chat Interface**: Real-time conversation with AI assistant
-- **Plan Creation Wizard**: Three-phase guided workflow
-- **Document Management**: Upload and manage documents
-- **Settings Panel**: Configuration options
-- **Results Display**: Formatted responses with sources
+**Current UI Components:**
+- **Chat Interface**: Form-based conversation with AI assistant
+- **Plan Creation Forms**: Multi-phase guided workflow
+- **Document Upload**: File management interface
+- **Results Display**: Formatted responses with basic styling
 
-**JavaScript Features:**
-- AJAX for asynchronous communication
-- WebSocket support (if configured)
+**Current Features:**
+- Form-based interaction with Flask backend
+- Session-based state management
+- Basic responsive design
+- File upload capabilities
+
+**Planned Features:**
+- WebSocket support for real-time updates
 - Dynamic form validation
-- Session management
-- Keyboard shortcuts
-- Responsive design for mobile
+- Real-time notifications
+- Advanced JavaScript interactions
+- Mobile-responsive enhancements
 
 ## 🚀 Installation & Setup
 
@@ -414,7 +411,13 @@ CHUNK_SIZE=800
 CHUNK_OVERLAP=100
 ```
 
-### 6. Initialize Database
+### 6. Create Required Directories
+```bash
+# Create data and model directories if they don't exist
+mkdir -p data model
+```
+
+### 7. Initialize Database
 ```bash
 # Run database utilities to create tables
 python final_db_utils.py
@@ -423,13 +426,13 @@ python final_db_utils.py
 python test_db.py
 ```
 
-### 7. Add Documents
+### 8. Add Documents
 ```bash
 # Copy your documents to the data folder
 cp /path/to/your/documents/* data/
 ```
 
-### 8. Launch Application
+### 9. Launch Application
 
 #### Standard Mode
 ```bash
@@ -472,6 +475,8 @@ Content-Type: application/json
 }
 ```
 
+**Note**: The `"sources"` field is included only when the RAG pipeline finds relevant supporting documents; otherwise it may be omitted.
+
 ### Health Check
 ```http
 GET /_test_api
@@ -496,7 +501,7 @@ POST /_clear_cache
 
 ### MCP Database Query
 ```python
-# Using standard client
+# Using standard client - Only SELECT queries supported
 from mcp_client import MCPClient
 
 client = MCPClient("localhost", 5000)
@@ -505,14 +510,8 @@ result = client.execute_tool("query", {
     "params": ["North"]
 })
 
-# Using improved client
-from improved_mcp_client import ImprovedMCPClient
-
-client = ImprovedMCPClient("localhost", 5000)
-async_result = await client.async_query(
-    "SELECT * FROM commission_plans WHERE region = %s",
-    params=["North"]
-)
+# Note: Only SELECT queries are allowed. 
+# INSERT/UPDATE/DELETE queries will be rejected by the security layer.
 ```
 
 ## 📊 Commission Plan Workflow
@@ -588,16 +587,17 @@ async_result = await client.async_query(
 
 ### Database Operations via MCP
 ```python
-# Query commission plans
+# Query commission plans (SELECT only)
 client.execute_tool("query", {
     "sql": "SELECT * FROM commission_plans WHERE status = 'active'"
 })
 
-# Update plan status
-client.execute_tool("execute", {
-    "sql": "UPDATE commission_plans SET status = %s WHERE id = %s",
-    "params": ["inactive", 123]
-})
+# Note: Modification queries are not supported
+# The following would be BLOCKED by the security layer:
+# client.execute_tool("execute", {
+#     "sql": "UPDATE commission_plans SET status = %s WHERE id = %s",
+#     "params": ["inactive", 123]
+# })
 ```
 
 ## ⚡ Performance Optimization
@@ -605,7 +605,7 @@ client.execute_tool("execute", {
 ### Database Optimization
 - **Connection Pooling**: Reuse database connections
 - **Query Optimization**: Indexed columns for fast retrieval
-- **Batch Operations**: Process multiple records efficiently
+- **Read-Only Operations**: Optimized for SELECT queries only
 - **Caching**: Query result caching for repeated queries
 
 ### RAG Optimization
@@ -627,13 +627,15 @@ client.execute_tool("execute", {
 | **Database Connection Failed** | Check PostgreSQL service and credentials in `.env` |
 | **MCP Server Not Responding** | Verify MCP server is running and port is correct |
 | **No RAG Results** | Ensure documents exist in `data/` folder; rebuild index |
-| **SQL Security Error** | Query may contain restricted patterns; check `sql_security.py` logs |
+| **SQL Security Error** | Query may contain restricted patterns or non-SELECT operations; check `sql_security.py` logs |
 | **High Memory Usage** | Reduce `CHUNK_SIZE` or use smaller embedding model |
-| **Slow Database Queries** | Run `ANALYZE` on tables; check indexes with `final_db_utils.py` |
+| **Slow Database Queries** | Run `ANALYZE` on tables; check indexes |
+| **Modification Query Blocked** | Only SELECT queries are allowed; use external API for data modifications |
 
 ## 🔐 Security Best Practices
 
 - **SQL Injection Protection**: All queries validated by `sql_security.py`
+- **SELECT-Only Operations**: Database modifications blocked for security
 - **Input Sanitization**: User inputs cleaned before processing
 - **JWT Authentication**: Secure API endpoints with tokens
 - **Database Encryption**: Use SSL/TLS for database connections
@@ -643,49 +645,43 @@ client.execute_tool("execute", {
 
 ## 🧪 Testing
 
-### Run All Tests
+### Run Current Tests
 ```bash
-# Run complete test suite
-pytest
-
-# Run specific test categories
-pytest test_db.py::test_connection
-pytest test_db.py::test_security
-```
-
-### Database Tests
-```bash
-# Test database connectivity and operations
+# Test database connectivity and basic SELECT queries
 python test_db.py
 ```
 
-### MCP Server Tests
-```bash
-# Test MCP server functionality
-python -m pytest test_mcp_server.py
-```
+### Test Coverage
+Current testing includes:
+- Database connection validation
+- Environment variable loading
+- Basic SELECT query execution on plan_master table
 
-### Load Testing
-```bash
-# Run load tests with locust
-locust -f tests/load_test.py --host=http://localhost:5000
-```
+### Planned Test Expansion
+- Comprehensive unit test suite with pytest
+- Security vulnerability testing
+- Performance benchmarking
+- Load testing with locust
+- MCP server integration tests
 
 ## 🗺️ Roadmap
 
 ### Completed ✅
-- [x] MCP PostgreSQL Server Integration
+- [x] MCP PostgreSQL Server Integration (SELECT-only)
 - [x] Enhanced RAG Pipeline
-- [x] SQL Security Layer
-- [x] Database Utilities
-- [x] Dual MCP Clients (Standard & Improved)
+- [x] SQL Security Layer with SELECT-only enforcement
+- [x] Database Query Utilities
+- [x] Dual MCP Clients (Standard & Improved with logging)
 
 ### In Progress 🚧
+- [ ] Comprehensive Test Suite
+- [ ] Advanced Database Utilities (migrations, backups)
+- [ ] Enhanced MCP Client Features (async, streaming)
+
+### Planned 📋
 - [ ] WebSocket Support for Real-time Updates
 - [ ] GraphRAG Implementation
 - [ ] Advanced Analytics Dashboard
-
-### Planned 📋
 - [ ] Multi-tenant Architecture
 - [ ] Voice Interface Support
 - [ ] Mobile Application
@@ -694,6 +690,7 @@ locust -f tests/load_test.py --host=http://localhost:5000
 - [ ] Advanced Caching with Redis
 - [ ] Elasticsearch Integration
 - [ ] API Rate Limiting & Throttling
+- [ ] Full CRUD Support via Secure API Layer
 
 ## 🤝 Contributing
 
@@ -702,7 +699,7 @@ We welcome contributions! Please follow these guidelines:
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Write tests for new functionality
-4. Ensure all tests pass (`pytest`)
+4. Ensure all tests pass (`python test_db.py`)
 5. Commit your changes (`git commit -m 'Add AmazingFeature'`)
 6. Push to the branch (`git push origin feature/AmazingFeature`)
 7. Open a Pull Request
