@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-MCP Client - Pure MCP implementation without hardcoded SQL
-"""
-
 import os
 import sys
 import subprocess
@@ -127,11 +122,26 @@ class MCPPostgreSQLClient:
             
         return self.schema_cache or {}
 
-    def natural_language_to_sql(self, user_query: str) -> Dict[str, Any]:
+    def natural_language_to_sql(self, user_query: str, org_id=None, client_id=None) -> Dict[str, Any]:
         """
         PURE MCP: Use Claude to dynamically generate SQL based on schema.
         NO HARDCODED PATTERNS!
         """
+        tenant_rule = ""
+        if org_id and client_id:
+            tenant_rule = (
+                 f"\n40. ALWAYS add a WHERE clause filtering by BOTH org_id = '{org_id}' AND client_id = '{client_id}'. "
+                "Assume every relevant table has org_id and client_id columns. Apply BOTH filters to all queries, even if not explicitly asked. "
+                "Do not return data for any other organization or client under any circumstances."
+            )
+        elif org_id:
+            tenant_rule = (
+                f"\n40. ALWAYS add a WHERE clause filtering data to ONLY rows with org_id = '{org_id}'. " 
+                "Apply this filter to all queries, even if not explicitly asked."
+            )
+        else:
+            tenant_rule = ""
+
         try:
             # Get fresh schema from MCP server
             schema = self.get_database_schema()
@@ -149,23 +159,54 @@ class MCPPostgreSQLClient:
             # Create prompt for Claude with full context
             prompt = f"""You are a PostgreSQL expert. Convert the following natural language query to SQL.
 
-DATABASE SCHEMA:
-{schema_description}
+                            DATABASE SCHEMA:
+                            {schema_description}
 
-USER QUERY: {user_query}
+                            USER QUERY: {user_query}
 
-IMPORTANT RULES:
-1. ONLY generate SELECT statements (read-only queries)
-2. Use proper table joins when multiple tables are needed
-3. Include appropriate WHERE clauses for filtering
-4. Use LOWER() for case-insensitive text searches
-5. Always include ORDER BY for consistent results
-6. Limit results appropriately (default 100 unless specified)
-7. Use table aliases for clarity (pm for plan_master, pr for plan_rules, etc.)
-8. For "active" items, check status=1 AND current date between valid_from and valid_to
-9. Include meaningful column aliases in SELECT
+                            IMPORTANT RULES:
+                            1. ONLY generate SELECT statements (read-only queries)
+                            2. Use proper table joins when multiple tables are needed
+                            3. Include appropriate WHERE clauses for filtering
+                            4. Use LOWER() for case-insensitive text searches
+                            5. Always include ORDER BY for consistent results
+                            6. Limit results appropriately (default 100 unless specified)
+                            7. Use table aliases for clarity (pm for plan_master, pr for plan_rules, etc.)
+                            8. For "active" items, check status=1 AND current date between valid_from and valid_to
+                            9. Include meaningful column aliases in SELECT
+                            10. When asked to "show all" records, do NOT filter by status or date.
+                            11. When asked for "active", use status=1 AND current date between valid_from and valid_to
+                            12. When in doubt, be literal and avoid filtering unless explicitly requested.
+                            13. For "all plans", return all rows in plan_master without filtering by status or dates.
+                            14. For “active”, “current”, or “valid”, use the appropriate status=1 AND NOW() BETWEEN valid_from AND valid_to.
+                            15. For “inactive”, "expired", "past" etc, use status != 1 OR NOW() NOT BETWEEN valid_from AND valid_to.
+                            16. Do NOT add conditions to the SQL if not stated in the question.
+                            17. Use COUNT(*), SUM(field), etc, as appropriate.
+                            18. Use ORDER BY <date_column> DESC for latest, and ASC for oldest, with LIMIT 1 unless user asks for more.
+                            19. Default to LIMIT 10 unless user requests more or all.
+                            20. Select only the columns relevant to the question, not all columns, unless user says "all columns" or "full details".
+                            21. Always use LOWER(column) = LOWER(value) or ILIKE, especially for textual fields, for robustness.
+                            22. When a question involves info from multiple tables (e.g., plan + assignee), join tables using foreign keys.
+                            23. If the user query is ambiguous (e.g., "show plans"), default to showing active plans, but state this logic.
+                            24. If the user asks “which plans have no <field>” or “missing <field>”, generate WHERE <field> IS NULL or IS NOT NULL as appropriate.
+                            25. If query includes "order by", "sort by", follow requested order.
+                            26. When returning all plans, include a computed column CASE WHEN status=1 ... as "Active"/"Inactive" for clarity (to allow frontend to display this nicely).
+                            27. Never generate UPDATE, INSERT, DELETE, CREATE, ALTER, DROP, TRUNCATE, or any statement other than SELECT.
+                            28. Never allow SQL with multiple statements, comments, or batch execution.
+                            29. Use ILIKE or LIKE for "contains", "starts with", "ends with" search cases.
+                            30. For "missing" values, use IS NULL or IS NULL OR = '' as required.
+                            31. For range questions (e.g., "between dates"), use WHERE <date_column> BETWEEN <start> AND <end>.
+                            32. For friendly aggregation/group by, use only for count, sum, avg, as requested and group as appropriate.
+                            33. Never expose sensitive fields (e.g., passwords, tokens) if they exist.
+                            34. Cast date types appropriately when comparing dates and timestamps.
+                            35. Always escape and parameterize string literals (never interpolate directly).
+                            36. Only reference tables and columns present in the provided schema.
+                            37. Limit output using LIMIT and always show the limit.
+                            38. If "all columns", expand SELECT to list all column names explicitly.
+                            39. If query seems unsupported, dangerous, or ambiguous, return a SELECT that results in zero rows or a warning comment.
+                            40. {tenant_rule}
 
-Return ONLY the SQL query, no explanation or markdown."""
+                            Return ONLY the SQL query, no explanation or markdown."""
 
             # Claude generates SQL dynamically based on YOUR schema
             response = self.anthropic_client.messages.create(
@@ -242,11 +283,11 @@ Return ONLY the SQL query, no explanation or markdown."""
         
         return "\n".join(lines)
 
-    def execute_query_with_claude(self, user_query: str) -> Dict[str, Any]:
+    def execute_query_with_claude(self, user_query: str, org_id=None, client_id=None ) -> Dict[str, Any]:
         """Complete MCP pipeline: NL → SQL → Execute → Format"""
         try:
             # Step 1: Generate SQL using Claude (DYNAMIC)
-            sql_result = self.natural_language_to_sql(user_query)
+            sql_result = self.natural_language_to_sql(user_query, org_id=org_id, client_id=client_id)
             
             if not sql_result.get('success'):
                 return {
@@ -306,21 +347,33 @@ Return ONLY the SQL query, no explanation or markdown."""
             
             prompt = f"""Convert this database query result into natural, conversational English.
 
-Original Question: {original_query}
+                            Original Question: {original_query}
 
-Database Results ({len(data)} total rows):
-{data_json}
+                            Database Results ({len(data)} total rows):
+                            {data_json}
 
-Instructions:
-1. Provide a natural, conversational response
-2. Don't mention SQL, queries, databases, or technical terms
-3. If there are many results, summarize the key information
-4. Use bullet points or numbering for lists when appropriate
-5. Be concise but complete
-6. If showing a list, include the most important/relevant items
-7. Mention the total count if there are many results
+                            Instructions:
+                            1. For every row/result, output a new bullet point that is always a FULL standalone English sentence, not just a list of fields, keywords, or a fragment. Each bullet must directly state all the relevant fields in a smooth, natural, business style (e.g., "• The 'testghj' plan is valid from Sep 8, 2025 to Sep 9, 2026 and is currently pending approval and review.").
+                            2. Do not use shorthand, telegraphic style, or field lists. Each bullet must be a sentence that can stand alone when read aloud.
+                            3. Present each row/result as a separate bullet point (•) or numbered list item, regardless of what type of entity or table is being shown.
+                            4. For each result, include all relevant human-readable fields (such as names, dates, status, type, etc.) that would be helpful for a business user. If fields are not relevant to the user, omit them. If the entity type is clear (e.g., program, plan, employee), start the bullet with that name.
+                            5. Do not group, summarize, or collapse items—there must be exactly one bullet/list entry per row in the results, even for a large result set.
+                            6. If showing more than 20 results, only show the first 20 (one bullet each), and clearly state at the end how many more exist.
+                            7. Avoid using SQL/database or technical terminology. Write for a non-technical business audience.
+                            8. Be concise but complete: prefer short, direct, clear sentences, but do not leave out key business details.
+                            9. If the result is for a count, statistic, or aggregation rather than rows, state the answer in one clear sentence.
+                            10. Never return table/field names or JSON unless they are required for clarity.
+                            11. The output must be easy to read and scan, and friendly for a business user. Never say "here is the query result:"
+                            12. Always mention the total count of results if not all are shown.
+                            13. Never mention that you are an AI, a language model, or anything about SQL or technical processes.
+                            14. For each result/row, output a new line that starts with a Markdown bullet (`*`) or Unicode bullet (`•`), followed by that result's info—never as a numbered inline list, but with each bullet/result on its own line.
+                            15. Include key details for each row as appropriate for business users (plan name, date, type, status, etc).
+                            16. Never mention SQL, queries, or technical terms.
+                            17. Format so it is easily readable in plain text or Markdown—use hard line breaks between bullets!
+                            18. If the result is just a single value, return a clear sentence.
+                            
+                            Response:"""
 
-Response:"""
 
             response = self.anthropic_client.messages.create(
                 model="claude-3-5-sonnet-20241022",
@@ -342,10 +395,10 @@ Response:"""
             # Last resort fallback - just show row count
             return f"Found {len(data)} results matching your query."
 
-    def process_natural_language_query(self, user_query: str, context: str = "") -> Dict[str, Any]:
+    def process_natural_language_query(self, user_query: str, context: str = "", org_id=None, client_id=None) -> Dict[str, Any]:
         """Main entry point for MCP query processing"""
-        logger.info(f"🎯 Processing query: '{user_query}'")
-        return self.execute_query_with_claude(user_query)
+        logger.info(f"🎯 Processing query: '{user_query}' (org_id={org_id}, client_id={client_id})")
+        return self.execute_query_with_claude(user_query, org_id=org_id, client_id=client_id )
 
     def __del__(self):
         """Cleanup MCP server on exit"""
