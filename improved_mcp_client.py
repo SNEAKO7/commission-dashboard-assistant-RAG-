@@ -6,9 +6,9 @@ from mcp_client import mcp_client
 
 logger = logging.getLogger(__name__)
 
-def execute_query(user_query: str, context: str = "") -> dict:
+def execute_query(user_query: str, context: str = "", org_id=None, client_id=None) -> dict:
     """Execute natural language query using MCP + Claude"""
-    return mcp_client.process_natural_language_query(user_query, context)
+    return mcp_client.process_natural_language_query(user_query, context, org_id=org_id, client_id=client_id)
 
 def format_query_response(result: dict) -> str:
     """Format the response for display"""
