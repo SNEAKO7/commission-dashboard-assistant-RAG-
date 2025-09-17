@@ -52,10 +52,10 @@ logger.info(f"📂 DOCUMENTS_FOLDER: {DOCUMENTS_FOLDER}")
 def get_client_id_for_org(org_id):
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
-        database=os.getenv("DB_NAME", "commissions"),
+        database=os.getenv("DB_NAME", "commissions_database"),
         user=os.getenv("DB_USER", "user"),
-        password=os.getenv("DB_PASSWORD", "password"),
-        port=int(os.getenv("DB_PORT", 5432)),
+        password=os.getenv("DB_PASSWORD", "pass"),
+        port=int(os.getenv("DB_PORT", 321)),
     )
     try:
         with conn.cursor() as cur:
@@ -79,7 +79,7 @@ def verify_jwt_token(f):
         try:
             # Replace 'your-jwt-secret' with the secret used by your .NET backend!
             #payload = jwt.decode(token, 'your-jwt-secret', algorithms=['HS256'])
-            payload = jwt.decode(token, "V_E_R_Y_S_E_C_R_E_T_K_E_Y_Commission_WEB_APP", algorithms=['HS256'], audience="http://callippus.co.uk", issuer="http://callippus.co.uk")
+            payload = jwt.decode(token, "S_E_C_R_E_T_K_E_Y_Commissions_app", algorithms=['HS256'], audience="http://...", issuer="http://...")
             print("Decoded JWT payload:", payload)
             
             # Save user fields needed for multitenancy:
@@ -1720,7 +1720,7 @@ def login():
 
     # Call the .NET API
     r = requests.post(
-        "https://commissions.callippus.co.uk/api/authenticate",
+        "https://......./api/authenticate",
         json={'username': username, 'password': password}
     )
     if r.status_code != 200:
