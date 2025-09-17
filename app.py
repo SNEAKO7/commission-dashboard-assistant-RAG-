@@ -1,4 +1,3 @@
-
 import os
 import json
 import logging
@@ -12,7 +11,10 @@ import requests
 #from final_mcp_client import mcp_client
 from improved_mcp_client import execute_query, format_query_response
 from improved_mcp_client import mcp_client
-
+import jwt
+from functools import wraps
+from flask_cors import CORS
+import psycopg2
 
 
 # Import RAG functionality
@@ -27,6 +29,7 @@ logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+CORS(app, origins=["http://localhost:9000"], supports_credentials=True)
 secret = os.getenv("FLASK_SECRET_KEY", None)
 if secret:
     app.secret_key = secret
@@ -45,6 +48,53 @@ DOCUMENTS_FOLDER = os.getenv("DOCUMENTS_FOLDER", "documents")  # Folder path for
 logger.info(f"✅ JWT_TOKEN present: {bool(JWT_TOKEN)}")
 logger.info(f"🔧 API_BASE_URL: {API_BASE_URL}")
 logger.info(f"📂 DOCUMENTS_FOLDER: {DOCUMENTS_FOLDER}")
+
+def get_client_id_for_org(org_id):
+    conn = psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        database=os.getenv("DB_NAME", "commissions"),
+        user=os.getenv("DB_USER", "user"),
+        password=os.getenv("DB_PASSWORD", "password"),
+        port=int(os.getenv("DB_PORT", 5432)),
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT parent_id FROM organization WHERE status=1 AND id=%s ORDER BY id DESC LIMIT 1", (org_id,)
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
+
+def verify_jwt_token(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'No token provided'}), 401
+        if token.startswith('Bearer '):
+            token = token[7:]
+        try:
+            # Replace 'your-jwt-secret' with the secret used by your .NET backend!
+            #payload = jwt.decode(token, 'your-jwt-secret', algorithms=['HS256'])
+            payload = jwt.decode(token, "V_E_R_Y_S_E_C_R_E_T_K_E_Y_Commission_WEB_APP", algorithms=['HS256'], audience="http://callippus.co.uk", issuer="http://callippus.co.uk")
+            print("Decoded JWT payload:", payload)
+            
+            # Save user fields needed for multitenancy:
+            request.org_id    = payload.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/spn")
+            request.org_code  = payload.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/stateorprovince")
+            request.user_id   = payload.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+            request.username  = payload.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
 
 # --- Server-side persistent user-state (optional keyed by user_id) ---
 USER_STATE = {}
@@ -141,7 +191,10 @@ def handle_database_query(user_message: str) -> str:
     """
     try:
         # Execute the natural language query using the improved MCP/NL→SQL flow
-        result = execute_query(user_message)
+        org_id = getattr(request, 'org_id', None)
+        org_code = getattr(request, 'org_code', None)
+        client_id = get_client_id_for_org(org_id) if org_id else None
+        result = execute_query(user_message, org_id=org_id, client_id=client_id)
 
         # Format for pretty printing, safe for end user
         formatted_response = format_query_response(result)
@@ -179,6 +232,7 @@ def handle_rag_query(user_message: str) -> str:
 # --- HTTP helper ---
 def api_headers():
     h = {"Accept": "application/json"}
+    token = session.get("jwt_token")
     if JWT_TOKEN:
         h["Authorization"] = f"Bearer {JWT_TOKEN}"
     return h
@@ -435,6 +489,12 @@ def start_plan_creation_session():
     }
     session["current_rule"] = None
     session["current_assignment"] = None
+    session["org_id"]   = getattr(request, "org_id", None)
+    session["org_code"] = getattr(request, "org_code", None)
+    session["user_id"]  = getattr(request, "user_id", None)
+    session["username"] = getattr(request, "username", None)
+    # (client_id/client_code only if needed and correctly mapped)
+
     session.modified = True
 
 # --- Flow handler (core) - COMPLETE PLAN CREATION LOGIC ---
@@ -1476,18 +1536,36 @@ def build_payload_from_session():
         "Id": 0
     }
     
+    client_id = session.get("client_id") or getattr(request, "client_id", None)
+    org_id = session.get("org_id") or None
+    client_code = session.get("client_code") or None
+    org_code = session.get("org_code") or None
+
+    if client_id:
+        payload["client_id"] = client_id    # If used in your API/DB
+    if org_id:
+        payload["org_id"] = org_id          # If used in your API/DB
+    if client_code:
+        payload["client_code"] = client_code
+    if org_code:
+        payload["org_code"] = org_code
+        
     logger.info("[build_payload_from_session] NEW payload preview: " + json.dumps(payload)[:1500])
     return payload
 
 # --- Chat endpoint - UPDATED WITH INTENT RECOGNITION AND RAG INTEGRATION ---
 @app.route("/chat", methods=["POST"])
+@verify_jwt_token
 def chat_endpoint():
     data = request.json or {}
     user_msg = (data.get("message") or "").strip()
     user_id = data.get("user_id") or data.get("userId") or None
+    org_id = getattr(request, "org_id", None)
+    client_id = get_client_id_for_org(org_id) if org_id else None
     
-    logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id}")
-    
+    #logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id}")
+    logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id},client_id: {client_id}") #client_id: {getattr(request,'client_id',None)}")
+
     # If user_id provided, load server-side saved session state (so refresh/browser-independent)
     if user_id:
         state = load_user_state(user_id) or {}
@@ -1631,6 +1709,30 @@ def clear_cache_endpoint():
     except Exception as e:
         logger.error(f"Error clearing cache: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/login', methods=['POST'])
+def login():
+    body = request.get_json()
+    username = body.get('username')
+    password = body.get('password')
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+
+    # Call the .NET API
+    r = requests.post(
+        "https://commissions.callippus.co.uk/api/authenticate",
+        json={'username': username, 'password': password}
+    )
+    if r.status_code != 200:
+        return jsonify({'error': 'Invalid credentials'}), 401
+    data = r.json()
+    token = data.get('id_token') or data.get('token')
+    if not token:
+        return jsonify({'error': 'No JWT returned'}), 500
+
+    # Store in session
+    session['jwt_token'] = token
+    return jsonify({'success': True})
 
 # --- Run server ---
 if __name__ == "__main__":
