@@ -15,10 +15,16 @@ import jwt
 from functools import wraps
 from flask_cors import CORS
 import psycopg2
+import time
+from mcp_client import mcp_client
 
 
 # Import RAG functionality
 from rag import retrieve_context, clear_vector_cache
+
+#for redis 
+from redis_chat_session import save_message, get_chat_history, clear_chat_history
+import redis
 
 # --- Setup & config ---
 load_dotenv()
@@ -52,10 +58,10 @@ logger.info(f"📂 DOCUMENTS_FOLDER: {DOCUMENTS_FOLDER}")
 def get_client_id_for_org(org_id):
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
-        database=os.getenv("DB_NAME", "commissions_database"),
+        database=os.getenv("DB_NAME", "commissions"),
         user=os.getenv("DB_USER", "user"),
-        password=os.getenv("DB_PASSWORD", "pass"),
-        port=int(os.getenv("DB_PORT", 321)),
+        password=os.getenv("DB_PASSWORD", "password"),
+        port=int(os.getenv("DB_PORT", 5432)),
     )
     try:
         with conn.cursor() as cur:
@@ -79,7 +85,7 @@ def verify_jwt_token(f):
         try:
             # Replace 'your-jwt-secret' with the secret used by your .NET backend!
             #payload = jwt.decode(token, 'your-jwt-secret', algorithms=['HS256'])
-            payload = jwt.decode(token, "S_E_C_R_E_T_K_E_Y_Commissions_app", algorithms=['HS256'], audience="http://...", issuer="http://...")
+            payload = jwt.decode(token, "V_E_R_Y_S_E_C_R_E_T_K_E_Y_Commission_WEB_APP", algorithms=['HS256'], audience="http://callippus.co.uk", issuer="http://callippus.co.uk")
             print("Decoded JWT payload:", payload)
             
             # Save user fields needed for multitenancy:
@@ -1553,6 +1559,28 @@ def build_payload_from_session():
     logger.info("[build_payload_from_session] NEW payload preview: " + json.dumps(payload)[:1500])
     return payload
 
+@app.route("/chat/history", methods=["GET"])
+@verify_jwt_token
+def chat_history():
+    user_id = request.args.get("user_id")
+    client_id = request.args.get("client_id")
+    session_id = request.args.get("session_id")
+
+    if not (user_id and session_id):
+        return jsonify({"error": "Missing user_id or session_id"}), 400
+    
+    # Get org_id and derive client_id if not provided
+    org_id = getattr(request, "org_id", None)
+    
+    if not client_id and org_id:
+        client_id = get_client_id_for_org(org_id)
+    
+    if not client_id:
+        return jsonify({"error": "Unable to determine client_id"}), 400
+    
+    history = get_chat_history(client_id, session_id)
+    return jsonify({"history": history})
+
 # --- Chat endpoint - UPDATED WITH INTENT RECOGNITION AND RAG INTEGRATION ---
 @app.route("/chat", methods=["POST"])
 @verify_jwt_token
@@ -1562,7 +1590,31 @@ def chat_endpoint():
     user_id = data.get("user_id") or data.get("userId") or None
     org_id = getattr(request, "org_id", None)
     client_id = get_client_id_for_org(org_id) if org_id else None
-    
+
+    #Get session ID
+    #session_id = f"{user_id}_{int(time.time())}"
+    session_id = data.get("session_id") or f"{user_id}_{int(time.time())}"
+
+    #save user messages
+    save_message(client_id, session_id, {"sender": "user", "text": user_msg})
+
+    # Handle the chat logic (bot reply)
+    #bot_response = handle_chat_logic(user_msg, org_id=org_id, client_id=client_id)
+    result = mcp_client.process_natural_language_query(user_msg, org_id=org_id, client_id=client_id)
+    # --- PATCH FOR 429/RATE LIMIT ERRORS ---
+    error_text = result.get("error") or result.get("formatted_response") or result.get("formattedresponse") or ""
+    if "429" in error_text or "rate_limit" in error_text:
+        bot_response = "The server is currently busy or overloaded. Please wait a few seconds and try again."
+    else:
+        bot_response = result.get("formattedresponse") or result.get("response") or str(result)
+
+     #Save bot reply
+    save_message(client_id, session_id, {"sender": "bot", "text": bot_response})
+
+    # 5. Optionally, get all chat so far
+    history = get_chat_history(client_id, session_id)
+    return jsonify({"response": bot_response, "history": history})
+
     #logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id}")
     logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id},client_id: {client_id}") #client_id: {getattr(request,'client_id',None)}")
 
@@ -1720,7 +1772,7 @@ def login():
 
     # Call the .NET API
     r = requests.post(
-        "https://......./api/authenticate",
+        "https://commissions.callippus.co.uk/api/authenticate",
         json={'username': username, 'password': password}
     )
     if r.status_code != 200:
