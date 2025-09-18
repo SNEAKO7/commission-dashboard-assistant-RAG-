@@ -1,0 +1,6 @@
+@echo off
+echo Starting Redis...
+start /B C:\Users\callippus\Downloads\Redis-x64-5.0.14.1\redis-server.exe
+timeout /t 3 /nobreak >nul
+echo Starting Flask app...
+python app.py
