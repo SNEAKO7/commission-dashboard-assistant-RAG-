@@ -17,6 +17,11 @@ from flask_cors import CORS
 import psycopg2
 import time
 from mcp_client import mcp_client
+import intent_detection
+from nlp_plan_builder import extract_plan_struct_from_text
+from datetime import datetime, timedelta
+import re
+
 
 
 # Import RAG functionality
@@ -44,7 +49,9 @@ else:
     app.secret_key = os.urandom(24)
 
 app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_PERMANENT"] = True #False
+app.config["SESSION_USE_SIGNER"] = True
+app.permanent_session_lifetime = timedelta(hours=2)
 Session(app)
 
 API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "https://localhost:8081")
@@ -80,6 +87,7 @@ def verify_jwt_token(f):
         token = request.headers.get('Authorization')
         if not token:
             return jsonify({'error': 'No token provided'}), 401
+        
         if token.startswith('Bearer '):
             token = token[7:]
         try:
@@ -87,6 +95,7 @@ def verify_jwt_token(f):
             #payload = jwt.decode(token, 'your-jwt-secret', algorithms=['HS256'])
             payload = jwt.decode(token, "V_E_R_Y_S_E_C_R_E_T_K_E_Y_Commission_WEB_APP", algorithms=['HS256'], audience="http://callippus.co.uk", issuer="http://callippus.co.uk")
             print("Decoded JWT payload:", payload)
+            session['jwt_token'] = token
             
             # Save user fields needed for multitenancy:
             request.org_id    = payload.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/spn")
@@ -121,27 +130,25 @@ def clear_user_state(user_id):
             del USER_STATE[user_id]
 
 # --- INTENT RECOGNITION ---
-def is_plan_creation_intent(message: str) -> bool:
-    """
-    Determine if the user wants to create a commission plan or general query
-    """
-    message_lower = message.lower().strip()
-    
-    # Direct plan creation keywords
+
+def is_plan_creation_intent(user_msg, llm_complete_func):
+    msg = user_msg.lower().strip()
     plan_keywords = [
-        "create plan", "create a plan", "start plan", "start creating plan",
-        "new plan", "make plan", "build plan", "commission plan",
-        "create commission", "plan creation", "add plan", "setup plan"
+        "create plan", "create a plan", "start plan", "new plan", "commission plan",
+        "setup plan", "plan creation", "add plan", "build plan"
     ]
-    
-    # Check for direct plan creation intent
     for keyword in plan_keywords:
-        if keyword in message_lower:
+        if keyword in msg:
             logger.info(f"🎯 Plan creation intent detected: '{keyword}' found in message")
             return True
-    
-    logger.info("🤔 No plan creation intent detected - will use RAG")
-    return False
+    meta_prompt = f"""Is this message from a user a description of a new compensation plan or an attempt to create a compensation plan? Answer True or False: {user_msg}"""
+    try:
+        resp = llm_complete_func(prompt=meta_prompt, max_tokens=2, temperature=0)
+        logger.info(f'[intent LLM] LLM intent response: {resp}')
+        return resp.strip().lower().startswith("true")
+    except Exception as e:
+        return False
+
 
 def is_database_query_intent(message: str) -> bool:
     """
@@ -178,7 +185,8 @@ def is_database_query_intent(message: str) -> bool:
     for keyword in db_keywords:
         if keyword in message_lower:
             # Make sure it's not a plan creation intent
-            if not is_plan_creation_intent(message):
+            # if not is_plan_creation_intent(message):
+            if not intent_detection.is_plan_creation_intent(message, mcp_client.claude_complete):
                 logger.info(f"🎯 Database query intent detected: '{keyword}' found in message")
                 return True
     
@@ -191,7 +199,7 @@ def is_database_enabled():
     except ImportError:
         return False
 
-def handle_database_query(user_message: str) -> str:
+def handle_database_query(user_message: str, offset=0) -> str:
     """
     Handle database queries using improved MCP client 
     """
@@ -200,7 +208,7 @@ def handle_database_query(user_message: str) -> str:
         org_id = getattr(request, 'org_id', None)
         org_code = getattr(request, 'org_code', None)
         client_id = get_client_id_for_org(org_id) if org_id else None
-        result = execute_query(user_message, org_id=org_id, client_id=client_id)
+        result = execute_query(user_message, org_id=org_id, client_id=client_id, offset=offset)
 
         # Format for pretty printing, safe for end user
         formatted_response = format_query_response(result)
@@ -208,7 +216,28 @@ def handle_database_query(user_message: str) -> str:
 
     except Exception as e:
         logger.error(f"❌ [DB] Error processing database query: {e}")
-        return f"Sorry, I encountered an error while querying the database: {str(e)}"
+        error_text = str(e)
+        if ("429" in error_text or "rate_limit_error" in error_text or "Too Many Requests" in error_text):
+            return "The system is currently handling too many requests to the AI service. Please wait a few seconds and try again."
+        return "The server is restarting or temporarily unavailable. Please try again in a few seconds."
+        
+# --- Pagination helpers ---
+
+def get_plan_offset():
+    return session.get('plan_offset', 0)
+
+def set_plan_offset(offset):
+    session['plan_offset'] = offset
+    session.modified = True
+
+def increment_plan_offset(n=10):
+    session['plan_offset'] = get_plan_offset() + n
+    session.modified = True
+
+def reset_plan_offset():
+    session['plan_offset'] = 0
+    session.modified = True
+
 
 
 # --- RAG QUERY HANDLER - SIMPLIFIED SINCE rag.py NOW HANDLES CLEAN RESPONSES ---
@@ -233,15 +262,23 @@ def handle_rag_query(user_message: str) -> str:
         
     except Exception as e:
         logger.error(f"❌ [RAG] Error processing query: {e}")
+        error_text = str(e)
+        if "429" in error_text or "rate_limit_error" in error_text or "Too Many Requests" in error_text:
+            return "The system is currently handling too many requests to the AI service. Please wait a few seconds and try again."
         return f"Sorry, I encountered an error while searching the documents: {str(e)}"
 
-# --- HTTP helper ---
+
 def api_headers():
+    print("[DEBUG] jwt_token IN api_headers:", session.get('jwt_token'))
     h = {"Accept": "application/json"}
     token = session.get("jwt_token")
-    if JWT_TOKEN:
-        h["Authorization"] = f"Bearer {JWT_TOKEN}"
+    if not token:
+        token = JWT_TOKEN  # fallback ONLY if not in session (dev/testing)
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    print("API HEADERS USED FOR FETCH:", h)
     return h
+
 
 def fetch_json_safe(url, name_for_logs=None, timeout=8):
     name = name_for_logs or url
@@ -434,15 +471,21 @@ def build_options_and_store():
     return opts
 
 # --- POST to create program/plans (final submit) - UPDATED WITH BETTER ERROR HANDLING ---
+
 def post_program_creation(plan_payload):
     url = f"{API_BASE_URL}/api/PlanCreationWebApi/PostProgramCreation"
     try:
+        # Check if this is a simple payload (from NLP) or complex (from wizard)
+        if 'plan_name' in plan_payload:
+            # Convert simple NLP payload to API format
+            plan_payload = build_simple_payload_from_plan_data(plan_payload)
+        
         logger.info("[post_program_creation] posting to URL: " + url)
         logger.info("[post_program_creation] payload keys: " + str(list(plan_payload.keys())))
         logger.info("[post_program_creation] posting payload (truncated): " + json.dumps(plan_payload)[:1500])
         
         headers = api_headers()
-        headers["Content-Type"] = "application/json"  # Ensure content type is set
+        headers["Content-Type"] = "application/json"
         
         r = requests.post(url, json=plan_payload, headers=headers, timeout=30, verify=False)
         logger.info(f"[post_program_creation] status: {r.status_code}")
@@ -450,14 +493,14 @@ def post_program_creation(plan_payload):
         logger.info(f"[post_program_creation] response text: {r.text[:1000]}")
         
         if r.status_code == 404:
-            logger.error("[post_program_creation] 404 error - endpoint not found. Check API_BASE_URL and endpoint path")
+            logger.error("[post_program_creation] 404 error - endpoint not found")
             return {"error": "API endpoint not found (404). Check server configuration.", "status_code": 404}
         elif r.status_code == 401:
             logger.error("[post_program_creation] 401 error - authentication failed")
             return {"error": "Authentication failed (401). Check JWT token.", "status_code": 401}
         elif r.status_code == 500:
             logger.error("[post_program_creation] 500 error - server error")
-            return {"error": "Server error (500). Check payload format.", "status_code": 500}
+            return {"error": f"Server error (500): {r.text[:200]}", "status_code": 500}
         elif r.status_code not in [200, 201]:
             logger.warning(f"[post_program_creation] unexpected status: {r.status_code}")
             return {"error": f"Unexpected response status: {r.status_code}", "status_code": r.status_code, "response": r.text}
@@ -465,6 +508,9 @@ def post_program_creation(plan_payload):
         try:
             return r.json()
         except:
+            # Success but non-JSON response
+            if r.status_code in [200, 201]:
+                return {"success": True, "status_code": r.status_code, "text": r.text[:2000]}
             return {"status_code": r.status_code, "text": r.text[:2000]}
     except Exception as e:
         logger.error(f"[post_program_creation] error: {e}")
@@ -478,7 +524,11 @@ def start_plan_creation_session():
         # allow flow but warn if critical masters are missing
         logger.warning("[start_plan_creation_session] some master data missing; check backend endpoints")
     
+    # session.clear()
+    jwt = session.get("jwt_token")  # save JWT
     session.clear()
+    if jwt:
+        session["jwt_token"] = jwt  # restore JWT
     session["mode"] = "plan_creation"
     session["phase"] = 1
     session["stage"] = "plan_name"
@@ -504,891 +554,785 @@ def start_plan_creation_session():
     session.modified = True
 
 # --- Flow handler (core) - COMPLETE PLAN CREATION LOGIC ---
-def handle_message_in_flow(msg):
+
+'''def handle_message_in_flow(user_msg):
     """
-    msg: string user input
-    session keys used:
-    - stage: current stage string
-    - options: master options dict
-    - plan_data, current_rule, current_assignment
-    
-    Returns: response dict {"response": text}
+    Handle wizard continuation - process user input in plan creation mode
+    Returns: dict with 'response' key
     """
-    stage = session.get("stage")
-    opts = session.get("options", {})
-    pd = session.get("plan_data", {})
+    logger.info(f"[WIZARD] Processing continuation message: {user_msg}")
     
-    # Helper: send numbered options and store last_options in session for resolving select
-    def ask_options(key_name, items, heading):
-        # items may be list of strings or dicts
-        session["last_options"] = items
-        session["last_option_key"] = key_name
-        session.modified = True
-        return {"response": present_numbered_list(items, heading)}
+    # Get current plan data
+    plan_data = session.get('plan_data', {})
+    logger.info(f"[WIZARD] Current plan data: {plan_data}")
     
-    # Resolve selection using last_options
-    def resolve_input(user_text):
-        opts_list = session.get("last_options", [])
-        resolved = resolve_choice(user_text, opts_list)
-        return resolved
-    
-    m = (msg or "").strip()
-    
-    # ---------- Phase 1 ----------
-    if stage == "plan_name":
-        if not m:
-            return {"response": "Enter Plan Name:"}
-        
-        pd["plan_name"] = m
-        session["plan_data"] = pd
-        session["stage"] = "calculation_schedule"
-        session.modified = True
-        
-        # show calculation schedules
-        scheds = opts.get("schedules", [])
-        labels = [option_label(s) for s in scheds]
-        return ask_options("calculation_schedule", labels, "Choose Calculation Schedule:")
-    
-    if stage == "calculation_schedule":
-        if not m:
-            scheds = opts.get("schedules", [])
-            labels = [option_label(s) for s in scheds]
-            return ask_options("calculation_schedule", labels, "Choose Calculation Schedule:")
-        
-        sel = resolve_input(m) or m
-        
-        # map back to schedulerName if possible
-        scheds = opts.get("schedules", [])
-        # find matching object by label
-        chosen_label = None
-        for s in scheds:
-            lbl = option_label(s)
-            if lbl.lower() == str(sel).strip().lower():
-                chosen_label = lbl
-                break
-        
-        if chosen_label is None and sel in [option_label(s) for s in scheds]:
-            chosen_label = sel
-        
-        if chosen_label is None:
-            # invalid
-            labels = [option_label(s) for s in scheds]
-            return {"response": present_numbered_list(labels, "Choose Calculation Schedule:") + "\n\nInvalid selection. Choose a number or exact schedule name."}
-        
-        pd["calculation_schedule"] = chosen_label
-        session["plan_data"] = pd
-        session["stage"] = "payment_schedule"
-        session.modified = True
-        
-        # show payment schedules (same list)
-        labels = [option_label(s) for s in (opts.get("schedules") or [])]
-        return ask_options("payment_schedule", labels, "Choose Payment Schedule:")
-    
-    if stage == "payment_schedule":
-        if not m:
-            labels = [option_label(s) for s in (opts.get("schedules") or [])]
-            return ask_options("payment_schedule", labels, "Choose Payment Schedule:")
-        
-        sel = resolve_input(m) or m
-        labels = [option_label(s) for s in (opts.get("schedules") or [])]
-        
-        if sel not in labels:
-            return {"response": present_numbered_list(labels, "Choose Payment Schedule:") + "\n\nInvalid selection."}
-        
-        pd["payment_schedule"] = sel
-        session["plan_data"] = pd
-        session["stage"] = "assignee"
-        session.modified = True
-        
-        # present assignee names
-        assignees = opts.get("assignees") or []
-        return ask_options("assignee", assignees, "Choose Assignee Name:")
-    
-    if stage == "assignee":
-        if not m:
-            assignees = opts.get("assignees") or []
-            return ask_options("assignee", assignees, "Choose Assignee Name:")
-        
-        sel = resolve_input(m) or m
-        assignees = opts.get("assignees") or []
-        
-        if sel not in assignees:
-            return {"response": present_numbered_list(assignees, "Choose Assignee Name:") + "\n\nInvalid selection."}
-        
-        pd["assignee_name"] = sel
-        session["plan_data"] = pd
-        session["stage"] = "object_type"
-        session.modified = True
-        
-        return ask_options("object_type", opts.get("object_types", OBJECT_TYPES), "Choose Object Type:")
-    
-    if stage == "object_type":
-        if not m:
-            return ask_options("object_type", opts.get("object_types", OBJECT_TYPES), "Choose Object Type:")
-        
-        sel = resolve_input(m) or m
-        obj_types = opts.get("object_types", OBJECT_TYPES)
-        
-        if sel not in obj_types:
-            return {"response": present_numbered_list(obj_types, "Choose Object Type:") + "\n\nInvalid selection."}
-        
-        pd["object_type"] = sel
-        session["plan_data"] = pd
-        session["stage"] = "valid_from"
-        session.modified = True
-        
-        return {"response": "Enter Valid From date (YYYY-MM-DD):"}
-    
-    if stage == "valid_from":
-        if not m:
-            return {"response": "Enter Valid From date (YYYY-MM-DD):"}
-        
-        try:
-            datetime.strptime(m, "%Y-%m-%d")
-        except:
-            return {"response": "Invalid date format. Use YYYY-MM-DD."}
-        
-        pd["valid_from"] = m
-        session["plan_data"] = pd
-        session["stage"] = "valid_to"
-        session.modified = True
-        
-        return {"response": "Enter Valid To date (YYYY-MM-DD):"}
-    
-    if stage == "valid_to":
-        if not m:
-            return {"response": "Enter Valid To date (YYYY-MM-DD):"}
-        
-        try:
-            datetime.strptime(m, "%Y-%m-%d")
-        except:
-            return {"response": "Invalid date format. Use YYYY-MM-DD."}
-        
-        pd["valid_to"] = m
-        session["plan_data"] = pd
-        
-        # move to Plan Rules
-        session["stage"] = "rule_plan_type"
-        session.modified = True
-        
-        # present plan types
-        plan_types = opts.get("plan_types") or []
-        return ask_options("rule_plan_type", plan_types, "Now entering Plan Rules phase.\nChoose Plan Type for the first rule:")
-    
-    # ---------- Phase 2 (Plan Rules) ----------
-    if stage == "rule_plan_type":
-        if not m:
-            return ask_options("rule_plan_type", opts.get("plan_types") or [], "Choose Plan Type:")
-        
-        sel = resolve_input(m) or m
-        plan_types = opts.get("plan_types") or []
-        
-        if sel not in plan_types:
-            return {"response": present_numbered_list(plan_types, "Choose Plan Type:") + "\n\nInvalid selection."}
-        
-        # init new current_rule
-        cur = {
-            "plan_type": sel,
-            "plan_params": [],
-            "category_type": None,
-            "range_type": None,
-            "base_value": None,
-            "plan_base": None,
-            "value_type": None,
-            "valid_from": None,
-            "valid_to": None,
-            "absolute_calculation": False,
-            "sequence": 100,
-            "step": 0,
-            "assignments": []
-        }
-        
-        session["current_rule"] = cur
-        session["stage"] = "rule_plan_params"
-        session.modified = True
-        
-        # show plan params automatically
-        params = opts.get("plan_params") or []
-        return ask_options("rule_plan_params", params, "Select Plan Params for this rule (choose numbers separated by comma or type names separated by comma):")
-    
-    if stage == "rule_plan_params":
-        params_available = opts.get("plan_params") or []
-        
-        if not m:
-            return ask_options("rule_plan_params", params_available, "Select Plan Params for this rule:")
-        
-        # user may send comma-separated numbers or names
-        parts = [p.strip() for p in m.split(",") if p.strip()]
-        chosen = []
-        
-        for p in parts:
-            res = resolve_choice(p, params_available)
-            if res:
-                chosen.append(res)
-            else:
-                # if user typed number incorrectly, fallback to matching raw string
-                if p in params_available:
-                    chosen.append(p)
-        
-        if not chosen:
-            return {"response": present_numbered_list(params_available, "Select Plan Params:") + "\n\nInvalid selection. Choose 1,2 or names separated by comma."}
-        
-        cur = session.get("current_rule", {})
-        cur["plan_params"] = chosen
-        session["current_rule"] = cur
-        session["stage"] = "rule_category_type"
-        session.modified = True
-        
-        return ask_options("rule_category_type", opts.get("category_types", CATEGORY_TYPES), "Choose Category Type:")
-    
-    if stage == "rule_category_type":
-        if not m:
-            return ask_options("rule_category_type", opts.get("category_types", CATEGORY_TYPES), "Choose Category Type:")
-        
-        sel = resolve_input(m) or m
-        cats = opts.get("category_types", CATEGORY_TYPES)
-        
-        if sel not in cats:
-            return {"response": present_numbered_list(cats, "Choose Category Type:") + "\n\nInvalid selection."}
-        
-        cur = session.get("current_rule")
-        cur["category_type"] = sel
-        session["current_rule"] = cur
-        session["stage"] = "rule_range_type"
-        session.modified = True
-        
-        return ask_options("rule_range_type", opts.get("range_types", RANGE_TYPES), "Choose Range Type:")
-    
-    if stage == "rule_range_type":
-        if not m:
-            return ask_options("rule_range_type", opts.get("range_types", RANGE_TYPES), "Choose Range Type:")
-        
-        sel = resolve_input(m) or m
-        rlist = opts.get("range_types", RANGE_TYPES)
-        
-        if sel not in rlist:
-            return {"response": present_numbered_list(rlist, "Choose Range Type:") + "\n\nInvalid selection."}
-        
-        cur = session.get("current_rule")
-        cur["range_type"] = sel
-        session["current_rule"] = cur
-        session["stage"] = "rule_base_value"
-        session.modified = True
-        
-        return ask_options("rule_base_value", opts.get("base_values", BASE_VALUES), "Choose Base Value:")
-    
-    if stage == "rule_base_value":
-        if not m:
-            return ask_options("rule_base_value", opts.get("base_values", BASE_VALUES), "Choose Base Value:")
-        
-        sel = resolve_input(m) or m
-        bvals = opts.get("base_values", BASE_VALUES)
-        
-        if sel not in bvals:
-            return {"response": present_numbered_list(bvals, "Choose Base Value:") + "\n\nInvalid selection."}
-        
-        cur = session.get("current_rule")
-        cur["base_value"] = sel
-        session["current_rule"] = cur
-        session["stage"] = "rule_plan_base"
-        session.modified = True
-        
-        return ask_options("rule_plan_base", opts.get("plan_bases", PLAN_BASES), "Choose Plan Base:")
-    
-    if stage == "rule_plan_base":
-        if not m:
-            return ask_options("rule_plan_base", opts.get("plan_bases", PLAN_BASES), "Choose Plan Base:")
-        
-        sel = resolve_input(m) or m
-        pbs = opts.get("plan_bases", PLAN_BASES)
-        
-        if sel not in pbs:
-            return {"response": present_numbered_list(pbs, "Choose Plan Base:") + "\n\nInvalid selection."}
-        
-        cur = session.get("current_rule")
-        cur["plan_base"] = sel
-        session["current_rule"] = cur
-        session["stage"] = "rule_value_type"
-        session.modified = True
-        
-        return ask_options("rule_value_type", opts.get("value_types", VALUE_TYPES), "Choose Value Type:")
-    
-    if stage == "rule_value_type":
-        if not m:
-            return ask_options("rule_value_type", opts.get("value_types", VALUE_TYPES), "Choose Value Type:")
-        
-        sel = resolve_input(m) or m
-        vts = opts.get("value_types", VALUE_TYPES)
-        
-        if sel not in vts:
-            return {"response": present_numbered_list(vts, "Choose Value Type:") + "\n\nInvalid selection."}
-        
-        cur = session.get("current_rule")
-        cur["value_type"] = sel
-        session["current_rule"] = cur
-        session["stage"] = "rule_valid_from"
-        session.modified = True
-        
-        return {"response": "Enter Rule Valid From date (YYYY-MM-DD):"}
-    
-    if stage == "rule_valid_from":
-        if not m:
-            return {"response": "Enter Rule Valid From date (YYYY-MM-DD):"}
-        
-        try:
-            datetime.strptime(m, "%Y-%m-%d")
-        except:
-            return {"response": "Invalid date format. Use YYYY-MM-DD."}
-        
-        cur = session.get("current_rule")
-        cur["valid_from"] = m
-        session["current_rule"] = cur
-        session["stage"] = "rule_valid_to"
-        session.modified = True
-        
-        return {"response": "Enter Rule Valid To date (YYYY-MM-DD):"}
-    
-    if stage == "rule_valid_to":
-        if not m:
-            return {"response": "Enter Rule Valid To date (YYYY-MM-DD):"}
-        
-        try:
-            datetime.strptime(m, "%Y-%m-%d")
-        except:
-            return {"response": "Invalid date format. Use YYYY-MM-DD."}
-        
-        cur = session.get("current_rule")
-        cur["valid_to"] = m
-        session["current_rule"] = cur
-        session["stage"] = "rule_absolute_calc"
-        session.modified = True
-        
-        return ask_options("rule_absolute_calc", ON_OFF, "Absolute Calculation (On/Off):")
-    
-    if stage == "rule_absolute_calc":
-        if not m:
-            return ask_options("rule_absolute_calc", ON_OFF, "Absolute Calculation (On/Off):")
-        
-        sel = resolve_input(m) or m
-        
-        if sel not in ON_OFF:
-            return {"response": present_numbered_list(ON_OFF, "Absolute Calculation (On/Off):") + "\n\nInvalid selection."}
-        
-        cur = session.get("current_rule")
-        cur["absolute_calculation"] = True if sel.lower() == "on" else False
-        session["current_rule"] = cur
-        session["stage"] = "rule_add_condition"
-        session.modified = True
-        
-        return ask_options("rule_add_condition", YES_NO, "Add Condition?")
-    
-    # FIXED: Add Condition Logic
-    if stage == "rule_add_condition":
-        if not m:
-            return ask_options("rule_add_condition", YES_NO, "Add Condition?")
-        
-        sel = resolve_input(m) or m
-        if sel not in YES_NO:
-            return {"response": present_numbered_list(YES_NO, "Add Condition?") + "\n\nInvalid selection."}
-        
-        if sel.lower() == "yes":
-            # Save current_rule as a condition
-            cur = session.get("current_rule")
-            prules = pd.get("plan_rules", [])
-            prules.append(dict(cur))
-            pd["plan_rules"] = prules
-            session["plan_data"] = pd
+    # Check if this is NLP-based plan creation (has plan_data)
+    if plan_data:
+        # NLP-based continuation
+        user_msg_lower = user_msg.lower().strip()
+        
+        # Check if user wants to submit
+        if any(word in user_msg_lower for word in ['submit', 'save', 'confirm', 'yes', 'looks good', 'correct']):
+            # Check if we have minimum required fields
+            required_fields = ['plan_name']  # Minimum required
+            missing_required = [f for f in required_fields if not plan_data.get(f)]
             
-            # Create new condition with increased sequence (backend only)
-            new_seq = cur.get("sequence", 100) + 100
-            new_condition = {
-                "plan_type": cur.get("plan_type"),  # Keep same plan type
-                "plan_params": [],
-                "category_type": None,
-                "range_type": None,
-                "base_value": None,
-                "plan_base": None,
-                "value_type": None,
-                "valid_from": None,
-                "valid_to": None,
-                "absolute_calculation": False,
-                "sequence": new_seq,
-                "step": 0,
-                "assignments": []
-            }
+            if missing_required:
+                return {
+                    "response": f"Cannot submit yet. Plan name is required. Please provide a plan name first."
+                }
             
-            session["current_rule"] = new_condition
-            session["stage"] = "rule_plan_params"  # Start fresh condition from plan_params
-            session.modified = True
-            
-            # Show plan params for new condition
-            params = opts.get("plan_params") or []
-            return ask_options("rule_plan_params", params, "Choose Plan Params for the next condition:")
-        
-        else:  # sel.lower() == "no"
-            # Save current rule and move to step/clone decision
-            cur = session.get("current_rule")
-            prules = pd.get("plan_rules", [])
-            prules.append(dict(cur))
-            pd["plan_rules"] = prules
-            session["plan_data"] = pd
-            
-            session["stage"] = "rule_add_step_clone"
-            session.modified = True
-            return ask_options("rule_add_step_clone", ["Add Step", "Clone", "No"], "Would you like to Add Step or Clone this rule?")
-    
-    # FIXED: Add Step/Clone Logic
-    if stage == "rule_add_step_clone":
-        if not m:
-            return ask_options("rule_add_step_clone", ["Add Step", "Clone", "No"], "Add Step / Clone / No")
-        
-        sel = resolve_input(m) or m
-        
-        if sel == "Add Step":
-            # Get the last rule to base the step on
-            prules = pd.get("plan_rules", [])
-            if not prules:
-                return {"response": "No rules available to add step to."}
-            
-            last_rule = prules[-1]
-            # Create new step with step += 10 (backend only)
-            new_step_rule = dict(last_rule)
-            new_step_rule["step"] = last_rule.get("step", 0) + 10
-            new_step_rule["assignments"] = []  # Clear assignments for new step
-            
-            session["current_rule"] = new_step_rule
-            session["stage"] = "rule_absolute_calc"
-            session.modified = True
-            
-            return ask_options("rule_absolute_calc", ON_OFF, "Step added. Absolute Calculation (On/Off):")
-        
-        elif sel == "Clone":
-            # Get the last rule to clone
-            prules = pd.get("plan_rules", [])
-            if not prules:
-                return {"response": "No rules available to clone."}
-            
-            last_rule = prules[-1]
-            clone = dict(last_rule)
-            clone["assignments"] = []  # Clear assignments for clone
-            
-            session["current_rule"] = clone
-            session["stage"] = "rule_absolute_calc"
-            session.modified = True
-            
-            return ask_options("rule_absolute_calc", ON_OFF, "Rule cloned. Absolute Calculation (On/Off):")
-        
-        elif sel == "No":
-            # Move to assignments phase
-            session["current_rule"] = None
-            session["stage"] = "assignment_start"
-            session.modified = True
-            
-            return {"response": "Plan Rules phase completed. Now starting Plan Rule Value Assignment phase.\nType 'start assignments' to begin assignments for rules."}
-        
-        else:
-            return {"response": present_numbered_list(['Add Step','Clone','No'], "Add Step/Clone/No") + "\n\nInvalid selection."}
-    
-    # ---------- Phase 3: Assignments ----------
-    if stage == "assignment_start":
-        prules = pd.get("plan_rules", [])
-        
-        if not prules:
-            return {"response": "No plan rules available to assign values to. You can add rules first."}
-        
-        # Handle numeric input for rule selection
-        if m and m.isdigit():
-            idx = int(m) - 1
-            if 0 <= idx < len(prules):
-                session["assignment_rule_index"] = idx
-                session["stage"] = "assignment_add_yesno"
-                session.modified = True
-                return ask_options("assignment_add_yesno", YES_NO, f"Add assignment(s) for rule #{idx+1}?")
-            return {"response": f"Invalid rule number. Choose 1-{len(prules)}."}
-        
-        # Handle "start assignments" or show rules list
-        if not m or m.lower() == "start assignments":
-            # show list of rules and ask to choose one - REMOVED sequence/step display
-            lines = ["Choose rule to add assignments for (type number):"]
-            for i, r in enumerate(prules, start=1):
-                label = f"{i}. PlanType:{r.get('plan_type')} CategoryType:{r.get('category_type')} RangeType:{r.get('range_type')}"
-                lines.append(label)
-            session.modified = True
-            return {"response": "\n".join(lines)}
-        
-        # Handle submit at assignment stage - UPDATED WITH BETTER ERROR HANDLING
-        if m.lower() == "submit":
-            payload = build_payload_from_session()
+            # Build and submit the plan
             try:
-                resp = post_program_creation(payload)
+                # Submit to API
+                resp = post_program_creation(plan_data)
                 
-                # Check if response contains error
-                if isinstance(resp, dict) and resp.get("error"):
-                    return {"response": f"Error submitting plan: {resp.get('error')}. Status: {resp.get('status_code', 'unknown')}"}
-                
-                # clear session on success
-                session.clear()
-                return {"response": f"Plan submitted successfully! Server response: {resp}"}
+                # Clear session on success
+                if isinstance(resp, dict) and not resp.get("error"):
+                    jwt = session.get("jwt_token")
+                    session.clear()
+                    if jwt:
+                        session["jwt_token"] = jwt
+                    
+                    return {
+                        "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully!\n\nYou can now create another plan or ask me questions about existing plans."
+                    }
+                else:
+                    error_msg = resp.get('error', 'Unknown error') if isinstance(resp, dict) else str(resp)
+                    return {
+                        "response": f"❌ Error saving plan: {error_msg}\n\nPlease check the details and try again, or type 'edit' to modify the plan."
+                    }
+                    
             except Exception as e:
-                logger.error(f"[submit] error: {e}")
-                return {"response": f"Error submitting plan: {e}. Check server logs and ensure the API server is running."}
+                logger.error(f"[WIZARD] Error submitting plan: {e}")
+                return {
+                    "response": f"❌ Error saving plan: {str(e)}\n\nPlease try again or contact support."
+                }
         
-        return {"response": "Type a rule number to add assignments or 'submit' to submit the plan."}
-    
-    if stage == "assignment_add_yesno":
-        if not m:
-            return ask_options("assignment_add_yesno", YES_NO, "Add assignment for this rule? (Yes/No)")
-        
-        sel = resolve_input(m) or m
-        
-        if sel not in YES_NO:
-            return {"response": present_numbered_list(YES_NO, "Add assignment?") + "\n\nInvalid selection."}
-        
-        if sel.lower() == "no":
-            # allow choose another rule or finish
-            session["stage"] = "assignment_start"
+        # Check if user wants to edit
+        if any(word in user_msg_lower for word in ['edit', 'change', 'modify', 'update']):
+            # If just "edit" with no details, ask what to change
+            if user_msg_lower.strip() in ['edit', 'modify', 'change', 'update']:
+                return {
+                    "response": "What would you like to change? Please specify the field and new value.\n\nExample: 'Change plan name to Q4 Sales Champions' or 'Update commission to 10%'"
+                }
+            
+            # Try to extract field and value from edit commands
+            field_updated = False
+            
+            # Improved patterns to handle multi-word field names
+            patterns = [
+                r'change\s+(?:the\s+)?(.+?)\s+to\s+(.+)',  # "change [the] plan name to X"
+                r'update\s+(?:the\s+)?(.+?)\s+to\s+(.+)',  # "update [the] commission to X"
+                r'(.+?)\s*=\s*(.+)',                        # "plan_name = X"
+                r'(.+?)\s*:\s*(.+)'                         # "plan_name: X"
+            ]
+            
+            import re
+            for pattern in patterns:
+                match = re.search(pattern, user_msg_lower)
+                if match:
+                    raw_field = match.group(1).strip()
+                    value = match.group(2).strip()
+                    
+                    # Clean up field name - remove articles and extra spaces
+                    raw_field = raw_field.replace('the ', '').replace(' ', '_')
+                    
+                    # Map common field variations to actual field names
+                    field_map = {
+                        'name': 'plan_name',
+                        'plan_name': 'plan_name',
+                        'period': 'plan_period',
+                        'plan_period': 'plan_period',
+                        'commission': 'commission_structure',
+                        'commission_structure': 'commission_structure',
+                        'bonus': 'bonus_rules',
+                        'bonus_rules': 'bonus_rules',
+                        'target': 'sales_target',
+                        'sales_target': 'sales_target',
+                        'quota': 'quota',
+                        'territory': 'territory',
+                        'tiers': 'tiers',
+                        'effective_dates': 'effective_dates'
+                    }
+                    
+                    field = field_map.get(raw_field)
+                    
+                    if field:
+                        # Store old value for display
+                        old_value = plan_data.get(field, 'Not set')
+                        
+                        # Update the field based on type
+                        if field in ['quota', 'sales_target']:
+                            # Convert to integer for numeric fields
+                            try:
+                                plan_data[field] = int(value.replace(',', '').replace('$', ''))
+                            except:
+                                plan_data[field] = value
+                        else:
+                            # For text fields, preserve original case from user input
+                            # Extract the actual value from original message (not lowercase)
+                            original_match = re.search(pattern.replace('(.+?)', '(.+?)').replace('(.+)', '(.+)'), user_msg, re.IGNORECASE)
+                            if original_match:
+                                plan_data[field] = original_match.group(2).strip()
+                            else:
+                                plan_data[field] = value
+                        
+                        session['plan_data'] = plan_data
+                        session.modified = True
+                        field_updated = True
+                        
+                        logger.info(f"[WIZARD] Updated {field} from '{old_value}' to '{plan_data[field]}'")
+                        
+                        # Show updated summary
+                        summary = format_plan_summary(plan_data)
+                        return {
+                            "response": f"✏️ Updated {field.replace('_', ' ')} from '{old_value}' to: {plan_data[field]}\n\n{summary}\n\n✅ Type 'submit' to save this plan, or 'edit' to make more changes."
+                        }
+                    else:
+                        logger.warning(f"[WIZARD] Could not map field '{raw_field}' to a known field")
+                        break
+            
+            if not field_updated:
+                # Couldn't parse the edit command
+                return {
+                    "response": "I couldn't understand what you want to change. Please use format like:\n- 'Change plan name to Q4 Champions'\n- 'Change the commission to 10%'\n- 'Update quota to 500000'\n- 'plan_name = Q4 Champions'"
+                }
+
+        # Manual parsing for common patterns when NLP extraction fails
+        # Parse the continuation message manually for common fields
+        if not user_msg_lower.startswith(('change', 'update', 'edit')):
+            import re
+            
+            # Extract Q4 2025 type patterns
+            period_match = re.search(r'(Q[1-4]\s*\d{4})', user_msg, re.IGNORECASE)
+            if period_match:
+                plan_data['plan_period'] = period_match.group(1)
+            
+            # Extract quota
+            quota_match = re.search(r'quota[\s:]*(\d+)', user_msg, re.IGNORECASE)
+            if quota_match:
+                plan_data['quota'] = int(quota_match.group(1))
+            
+            # Extract target
+            target_match = re.search(r'target[\s:]*(\d+)', user_msg, re.IGNORECASE)
+            if target_match:
+                plan_data['sales_target'] = int(target_match.group(1))
+            
+            # Extract tiered structure
+            if 'tiered' in user_msg_lower or '%' in user_msg:
+                tiers = []
+                # Look for patterns like "5% below quota, 10% above quota"
+                tier_patterns = re.findall(r'(\d+)%\s*(below|above|for|at|over)?\s*(quota|target|\d+)?', user_msg, re.IGNORECASE)
+                for rate, condition, threshold in tier_patterns:
+                    tier_info = {'rate': f"{rate}%"}
+                    if condition:
+                        if 'below' in condition.lower():
+                            tier_info['threshold'] = 'Below quota'
+                        elif 'above' in condition.lower() or 'over' in condition.lower():
+                            tier_info['threshold'] = 'Above quota'
+                    tiers.append(tier_info)
+                if tiers:
+                    plan_data['tiers'] = tiers
+            
+            # Extract bonus rules
+            bonus_match = re.search(r'bonus\s+(\d+)\s+for\s+exceeding\s+(\d+)%?', user_msg, re.IGNORECASE)
+            if bonus_match:
+                plan_data['bonus_rules'] = f"${bonus_match.group(1)} bonus for exceeding {bonus_match.group(2)}% of target"
+            
+            # Extract dates
+            date_pattern = r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s+(?:to|through|-)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s+\d{4}'
+            date_match = re.search(date_pattern, user_msg, re.IGNORECASE)
+            if date_match:
+                # Parse the dates
+                date_str = date_match.group(0)
+                # Simple date parsing - you might want to use dateutil for better parsing
+                parts = re.split(r'\s+(?:to|through|-)\s+', date_str, re.IGNORECASE)
+                if len(parts) == 2:
+                    plan_data['effective_dates'] = {
+                        'start': '2025-01-01',  # Simplified - parse properly in production
+                        'end': '2025-03-31'
+                    }
+            
+            session["plan_data"] = plan_data
             session.modified = True
-            return {"response": "No assignment added. Choose another rule number to add assignment or type 'submit' to submit the plan."}
+            
+            # Show updated summary
+            summary = format_plan_summary(plan_data)
+            
+            # Check what's still missing
+            all_fields = [
+                'plan_name', 'plan_period', 'territory', 'quota', 
+                'commission_structure', 'tiers', 'bonus_rules', 
+                'sales_target', 'effective_dates'
+            ]
+            still_missing = [f for f in all_fields if not plan_data.get(f)]
+            
+            if not still_missing or len(still_missing) <= 2:
+                return {
+                    "response": f"Perfect! Here's your complete plan:\n\n{summary}\n\n✅ **Ready to submit!**\nType 'submit' to save this plan, or 'edit' to make changes."
+                }
+            else:
+                missing_str = ', '.join([f.replace('_', ' ') for f in still_missing[:3]])
+                return {
+                    "response": f"Great! I've updated your plan:\n\n{summary}\n\nℹ️ Optional fields still missing: {missing_str}\n\nYou can provide these details, type 'submit' to save with current info, or 'edit' to change existing values."
+                }
         
-        # yes => start adding one assignment
-        # initialize current_assignment
-        session["current_assignment"] = {
-            "combinations": [], 
-            "tier_slabs": [], 
-            "uom": None, 
-            "currency": None, 
-            "fromdate": pd.get("valid_from"), 
-            "todate": pd.get("valid_to")
-        }
-        session["stage"] = "assignment_combinations" # first subtab
-        session.modified = True
-        
-        # show params of the selected rule to choose combinations
-        rule_idx = session.get("assignment_rule_index")
-        prules = pd.get("plan_rules", [])
-        rule = prules[rule_idx]
-        params = rule.get("plan_params", [])
-        
-        if not params:
-            # skip combinations if no plan params
-            session["stage"] = "assignment_tierslab"
-            session.modified = True
-            return {"response": "No Plan Params for this rule. Proceeding to Tier Slab input."}
-        
-        # present params auto
-        session["last_options"] = params
-        session["last_option_key"] = "assignment_param"
-        session.modified = True
-        
-        return {"response": present_numbered_list(params, "Choose a Plan Param to add combination for (type number or name), or type 'done' to skip combinations:")}
-    
-    if stage == "assignment_combinations":
-        rule_idx = session.get("assignment_rule_index")
-        prules = pd.get("plan_rules", [])
-        
-        if rule_idx is None or rule_idx >= len(prules):
-            session["stage"] = "assignment_start"
-            session.modified = True
-            return {"response": "Invalid rule selection. Choose a rule first."}
-        
-        rule = prules[rule_idx]
-        params = rule.get("plan_params", [])
-        
-        if not params:
-            session["stage"] = "assignment_tierslab"
-            session.modified = True
-            return {"response": "No params. Proceeding to Tier Slab input."}
-        
-        if not m:
-            # re-show params
-            return {"response": present_numbered_list(params, "Choose a Plan Param to add combination for (or 'done' to finish combinations):")}
-        
-        if m.lower() == "done":
-            session["stage"] = "assignment_tierslab"
-            session.modified = True
-            return {"response": "Moving to Tier Slab entry. Enter slab as 'from,to,commission'. Type 'none' to skip tier slab."}
-        
-        # user chose a param (single)
-        chosen_param = resolve_choice(m, params) or m
-        
-        if chosen_param not in params:
-            return {"response": present_numbered_list(params, "Choose a Plan Param:") + "\n\nInvalid param selection."}
-        
-        # fetch dropdown options for this param using assignee_objects
-        ass_objs = opts.get("assignee_objects") or []
-        combo_options = get_param_options_for_combination(chosen_param, ass_objs)
-        
-        if not combo_options:
-            # ask for manual value entry
-            session["pending_param"] = chosen_param
-            session["stage"] = "assignment_combination_manual_value"
-            session.modified = True
-            return {"response": f"No dropdown options found for '{chosen_param}'. Type the value manually (exact string), or type 'skip' to skip this param."}
-        
-        # present combo options
-        labels = [o.get("label") for o in combo_options]
-        
-        # store combo_options to session for resolving numeric -> label
-        session["combo_options_for_param"] = combo_options
-        session["pending_param"] = chosen_param
-        session["last_options"] = labels
-        session["last_option_key"] = "combo_values"
-        session["stage"] = "assignment_combination_value"
-        session.modified = True
-        
-        return {"response": present_numbered_list(labels, f"Options for {chosen_param}:") + "\n\nSelect option by number or exact name, or type 'skip' to skip this param."}
-    
-    if stage == "assignment_combination_manual_value":
-        if not m:
-            return {"response": "Type manual value for the pending param or 'skip'."}
-        
-        if m.lower() == "skip":
-            session["stage"] = "assignment_combinations"
-            session.modified = True
-            return {"response": "Skipped. Choose another plan param or type 'done' to proceed."}
-        
-        # add manual combination
-        pending = session.get("pending_param")
-        ca = session.get("current_assignment", {})
-        ca.setdefault("combinations", []).append({pending: m})
-        session["current_assignment"] = ca
-        
-        # go back to param selection
-        session["stage"] = "assignment_combinations"
-        session.modified = True
-        return {"response": f"Added {pending} -> {m}. Add another param or type 'done' to finish combinations."}
-    
-    if stage == "assignment_combination_value":
-        if not m:
-            labels = session.get("last_options") or []
-            return {"response": present_numbered_list(labels, "Choose option:")}
-        
-        if m.lower() == "skip":
-            session["stage"] = "assignment_combinations"
-            session.modified = True
-            return {"response": "Skipped param. Choose another param or type 'done'."}
-        
-        labels = session.get("last_options") or []
-        resolved = resolve_choice(m, labels)
-        
-        if not resolved:
-            return {"response": present_numbered_list(labels, "Choose option:") + "\n\nInvalid selection."}
-        
-        pending = session.get("pending_param")
-        
-        # store in current_assignment
-        ca = session.get("current_assignment", {})
-        ca.setdefault("combinations", []).append({pending: resolved})
-        session["current_assignment"] = ca
-        
-        session["stage"] = "assignment_combinations"
-        session.modified = True
-        
-        return {"response": f"Added combination {pending} -> {resolved}. Choose another plan param or type 'done' to finish combinations."}
-    
-    # FIXED: Tier Slab Logic - Only ONE slab per assignment
-    if stage == "assignment_tierslab":
-        if not m:
-            return {"response": "Enter tier slab in format 'from,to,commission' (e.g., 0,1000,5). Type 'none' to skip tier slab."}
-        
-        if m.lower() == "none":
-            # skip tier slabs
-            session["stage"] = "assignment_uom"
-            session.modified = True
-            return ask_options("assignment_uom", [option_label(u) for u in (opts.get("uom") or [])], "Choose UOM (or type 'skip'):")
-        
-        # parse single slab
+        # Otherwise, try to extract more plan details from the message using NLP
         try:
-            fr, to, comm = [x.strip() for x in m.split(",")]
-        except:
-            return {"response": "Invalid format. Use: from,to,commission (e.g., 0,1000,5)."}
-        
-        ca = session.get("current_assignment", {})
-        # Store only ONE tier slab (replace any existing ones)
-        ca["tier_slabs"] = [{"fromValue": fr, "toValue": to, "commission": comm}]
-        session["current_assignment"] = ca
-        session["stage"] = "assignment_uom"  # Move directly to UOM
-        session.modified = True
-        
-        return ask_options("assignment_uom", [option_label(u) for u in (opts.get("uom") or [])], "Tier slab saved. Choose UOM (or type 'skip'):")
-    
-    if stage == "assignment_uom":
-        if not m:
-            return ask_options("assignment_uom", [option_label(u) for u in (opts.get("uom") or [])], "Choose UOM (or type 'skip'):")
-        
-        if m.lower() == "skip":
-            session["stage"] = "assignment_currency"
-            session.modified = True
-            return ask_options("assignment_currency", [option_label(c) for c in (opts.get("currency") or [])], "Choose Currency (or type 'skip'):")
-        
-        uoms_list = [option_label(u) for u in (opts.get("uom") or [])]
-        sel = resolve_choice(m, uoms_list) or m
-        
-        if sel not in uoms_list:
-            return {"response": present_numbered_list(uoms_list, "Choose UOM:") + "\n\nInvalid selection."}
-        
-        ca = session.get("current_assignment")
-        ca["uom"] = sel
-        session["current_assignment"] = ca
-        session["stage"] = "assignment_currency"
-        session.modified = True
-        
-        return ask_options("assignment_currency", [option_label(c) for c in (opts.get("currency") or [])], "Choose Currency (or type 'skip'):")
-    
-    if stage == "assignment_currency":
-        if not m:
-            return ask_options("assignment_currency", [option_label(c) for c in (opts.get("currency") or [])], "Choose Currency (or type 'skip'):")
-        
-        if m.lower() == "skip":
-            # finalize assignment with defaults
-            idx = session.get("assignment_rule_index")
-            prules = pd.get("plan_rules", [])
+            result = extract_plan_struct_from_text(user_msg, mcp_client.claude_complete)
             
-            if idx is None or idx >= len(prules):
-                return {"response": "Invalid rule index."}
-            
-            ca = session.get("current_assignment", {})
-            prules[idx].setdefault("assignments", []).append(ca)
-            pd["plan_rules"] = prules
-            session["plan_data"] = pd
-            session["current_assignment"] = None
-            session["stage"] = "assignment_add_another"
-            session.modified = True
-            
-            return ask_options("assignment_add_another", YES_NO, "Assignment saved. Add another assignment to this rule?")
-        
-        curs_list = [option_label(c) for c in (opts.get("currency") or [])]
-        sel = resolve_choice(m, curs_list) or m
-        
-        if sel not in curs_list:
-            return {"response": present_numbered_list(curs_list, "Choose Currency:") + "\n\nInvalid selection."}
-        
-        ca = session.get("current_assignment", {})
-        ca["currency"] = sel
-        session["current_assignment"] = ca
-        
-        # finalize assignment -> append to selected rule
-        idx = session.get("assignment_rule_index")
-        prules = pd.get("plan_rules", [])
-        prules[idx].setdefault("assignments", []).append(ca)
-        pd["plan_rules"] = prules
-        session["plan_data"] = pd
-        session["current_assignment"] = None
-        session["stage"] = "assignment_add_another"
-        session.modified = True
-        
-        return ask_options("assignment_add_another", YES_NO, "Assignment saved. Add another assignment to this rule?")
-    
-    if stage == "assignment_add_another":
-        if not m:
-            return ask_options("assignment_add_another", YES_NO, "Add another assignment?")
-        
-        sel = resolve_input(m) or m
-        
-        if sel not in YES_NO:
-            return {"response": present_numbered_list(YES_NO, "Add another assignment?") + "\n\nInvalid selection."}
-        
-        if sel.lower() == "yes":
-            # restart assignment for same rule
-            session["current_assignment"] = {
-                "combinations": [], 
-                "tier_slabs": [], 
-                "uom": None, 
-                "currency": None, 
-                "fromdate": pd.get("valid_from"), 
-                "todate": pd.get("valid_to")
-            }
-            session["stage"] = "assignment_combinations"
-            session.modified = True
-            
-            # show params again
-            rule_idx = session.get("assignment_rule_index")
-            rule = pd.get("plan_rules")[rule_idx]
-            params = rule.get("plan_params", [])
-            
-            if not params:
-                session["stage"] = "assignment_tierslab"
+            if result["status"] == "ok" and result["extracted"]:
+                # Don't replace all data, merge intelligently
+                for key, value in result["extracted"].items():
+                    # Skip the bogus "structure" field
+                    if key == 'structure':
+                        continue
+                    if value:  # Only update non-empty values
+                        plan_data[key] = value
+                
+                session["plan_data"] = plan_data
                 session.modified = True
-                return {"response": "No Plan Params for this rule. Proceeding to Tier Slab input."}
-            
-            session["last_options"] = params
-            session["last_option_key"] = "assignment_param"
-            session.modified = True
-            
-            return {"response": present_numbered_list(params, "Choose a Plan Param to add combination for (or 'done'):")}
-        
-        else:
-            # ask user choose another rule or finish and submit
-            session["stage"] = "assignment_start"
-            session.modified = True
-            return {"response": "Assignment(s) completed for this rule. You can choose another rule number to add assignments, or type 'submit' to submit the plan."}
-    
-    # ---------- Final submit ----------
-    if m.lower() == "submit":
-        # prepare payload and post
-        payload = build_payload_from_session()
-        try:
-            resp = post_program_creation(payload)
-            
-            # Check if response contains error
-            if isinstance(resp, dict) and resp.get("error"):
-                return {"response": f"Error submitting plan: {resp.get('error')}. Status: {resp.get('status_code', 'unknown')}"}
-            
-            # clear session on success
-            session.clear()
-            return {"response": f"Plan submitted successfully! Server response: {resp}"}
+                
+                logger.info(f"[WIZARD] Updated plan data: {plan_data}")
+                
+                summary = format_plan_summary(plan_data)
+                return {
+                    "response": f"Great! I've updated your plan:\n\n{summary}\n\n✅ Type 'submit' to save this plan, or 'edit' to make changes."
+                }
+            else:
+                # Couldn't extract anything meaningful - show current state
+                summary = format_plan_summary(plan_data)
+                return {
+                    "response": f"Current plan state:\n\n{summary}\n\nType 'submit' to save with current information, or provide more details."
+                }
+                
         except Exception as e:
-            logger.error(f"[submit] error: {e}")
-            return {"response": f"Error submitting plan: {e}. Check server logs and ensure the API server is running."}
+            logger.error(f"[WIZARD] Error processing continuation: {e}")
+            summary = format_plan_summary(plan_data)
+            return {
+                "response": f"Current plan:\n\n{summary}\n\nType 'submit' to save or provide more details."
+            }
     
-    # fallback while in flow
-    return {"response": "In plan creation flow. Type 'help' or follow the prompts. Type 'cancel' to abort."}
+    # Fallback for no plan data
+    return {
+        "response": "No active plan creation session. Please type 'create plan' to start creating a new commission plan."
+    }'''
+
+def handle_message_in_flow(user_msg):
+    """
+    Handle wizard continuation - process user input in plan creation mode
+    Returns: dict with 'response' key
+    """
+    logger.info(f"[WIZARD] Processing continuation message: {user_msg}")
+    
+    try:
+        # Get current plan data
+        plan_data = session.get('plan_data', {})
+        logger.info(f"[WIZARD] Current plan data: {plan_data}")
+        
+        # Check if this is NLP-based plan creation (has plan_data)
+        if plan_data:
+            # NLP-based continuation
+            user_msg_lower = user_msg.lower().strip()
+            
+            # Check if user wants to submit
+            if any(word in user_msg_lower for word in ['submit', 'save', 'confirm', 'yes', 'looks good', 'correct']):
+                # Check if we have minimum required fields
+                required_fields = ['plan_name']  # Minimum required
+                missing_required = [f for f in required_fields if not plan_data.get(f)]
+                
+                if missing_required:
+                    return {
+                        "response": f"Cannot submit yet. Plan name is required. Please provide a plan name first."
+                    }
+                
+                # Build and submit the plan
+               # Build and submit the plan
+                try:
+                    # Use your EXISTING API submission (NO hardcoded values!)
+                    resp = post_program_creation(plan_data)
+                    
+                    # Clear session on success
+                    if isinstance(resp, dict) and not resp.get("error"):
+                        jwt = session.get("jwt_token")
+                        session.clear()
+                        if jwt:
+                            session["jwt_token"] = jwt
+                        
+                        return {
+                            "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully!\n\nYou can now create another plan or ask me questions about existing plans."
+                        }
+                    else:
+                        error_msg = resp.get('error', 'Unknown error') if isinstance(resp, dict) else str(resp)
+                        return {
+                            "response": f"❌ Error saving plan: {error_msg}\n\nPlease check the details and try again, or type 'edit' to modify the plan."
+                        }
+                        
+                except Exception as e:
+                    logger.error(f"[WIZARD] Error submitting plan: {e}")
+                    return {
+                        "response": f"❌ Error saving plan: {str(e)}\n\nPlease try again or contact support."
+                    }
+ 
+
+                ''' # Build and submit the plan
+                try:
+                    # REAL DATABASE SUBMISSION (replace the fake one)
+                    logger.info(f"[WIZARD] Submitting plan to database: {plan_data}")
+                    
+                    # Convert plan data to database format
+                    db_plan = {
+                        "program_name": plan_data.get('plan_name'),
+                        "org_id": 94,  # Your org ID
+                        "client_id": 93,  # Your client ID  
+                        "status": 1,  # Active
+                        "valid_from": "2025-01-01",  # Extract from effective_dates
+                        "valid_to": "2025-12-31",    # Extract from effective_dates
+                        "assignee_name": "System",   # Default assignee
+                        "table_name": "commission_plans",
+                        "object_type": "Plan",
+                        "created_by": user_id or "system",
+                        "created_date": datetime.now().isoformat(),
+                        "plan_details": json.dumps(plan_data)  # Store full plan as JSON
+                    }
+                    
+                    # Insert into plan_master table using your database connection
+                    import psycopg2
+                    import json
+                    from datetime import datetime
+                    
+                    # Use your existing database connection
+                    conn = psycopg2.connect(
+                        host=os.getenv('DB_HOST'),
+                        database=os.getenv('DB_NAME'), 
+                        user=os.getenv('DB_USER'),
+                        password=os.getenv('DB_PASSWORD')
+                    )
+                    
+                    cursor = conn.cursor()
+                    
+                    insert_query = """
+                        INSERT INTO plan_master (
+                            program_name, org_id, client_id, status, valid_from, valid_to,
+                            assignee_name, table_name, object_type, created_by, created_date, plan_details
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """
+                    
+                    cursor.execute(insert_query, (
+                        db_plan["program_name"],
+                        db_plan["org_id"], 
+                        db_plan["client_id"],
+                        db_plan["status"],
+                        db_plan["valid_from"],
+                        db_plan["valid_to"],
+                        db_plan["assignee_name"],
+                        db_plan["table_name"],
+                        db_plan["object_type"],
+                        db_plan["created_by"],
+                        db_plan["created_date"],
+                        db_plan["plan_details"]
+                    ))
+                    
+                    plan_id = cursor.fetchone()[0]
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+                    
+                    logger.info(f"[WIZARD] Plan saved successfully with ID: {plan_id}")
+                    
+                    # Clear session on success
+                    jwt = session.get("jwt_token")
+                    session.clear()
+                    if jwt:
+                        session["jwt_token"] = jwt
+                    
+                    return {
+                        "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully with ID {plan_id}!\n\nYou can now create another plan or ask me questions about existing plans."
+                    }
+                        
+                except Exception as e:
+                    logger.error(f"[WIZARD] Error submitting plan to database: {e}")
+                    return {
+                        "response": f"❌ Error saving plan to database: {str(e)}\n\nPlease try again or contact support."
+                    }'''
+
+
+            # Check if user wants to edit
+            if any(word in user_msg_lower for word in ['edit', 'change', 'modify', 'update']):
+                # If just "edit" with no details, ask what to change
+                if user_msg_lower.strip() in ['edit', 'modify', 'change', 'update']:
+                    return {
+                        "response": "What would you like to change? Please specify the field and new value.\n\nExample: 'Change plan name to Q4 Sales Champions' or 'Update commission to 10%'"
+                    }
+                
+                # Try to extract field and value from edit commands
+                field_updated = False
+                
+                # Improved patterns to handle multi-word field names
+                patterns = [
+                    r'change\s+(?:the\s+)?(.+?)\s+to\s+(.+)',  # "change [the] plan name to X"
+                    r'update\s+(?:the\s+)?(.+?)\s+to\s+(.+)',  # "update [the] commission to X"
+                    r'(.+?)\s*=\s*(.+)',                        # "plan_name = X"
+                    r'(.+?)\s*:\s*(.+)'                         # "plan_name: X"
+                ]
+                
+                import re
+                for pattern in patterns:
+                    match = re.search(pattern, user_msg_lower)
+                    if match:
+                        raw_field = match.group(1).strip()
+                        value = match.group(2).strip()
+                        
+                        # Clean up field name - remove articles and extra spaces
+                        raw_field = raw_field.replace('the ', '').replace(' ', '_')
+                        
+                        # Map common field variations to actual field names
+                        field_map = {
+                            'name': 'plan_name',
+                            'plan_name': 'plan_name',
+                            'period': 'plan_period',
+                            'plan_period': 'plan_period',
+                            'commission': 'commission_structure',
+                            'commission_structure': 'commission_structure',
+                            'bonus': 'bonus_rules',
+                            'bonus_rules': 'bonus_rules',
+                            'target': 'sales_target',
+                            'sales_target': 'sales_target',
+                            'quota': 'quota',
+                            'territory': 'territory',
+                            'tiers': 'tiers',
+                            'effective_dates': 'effective_dates'
+                        }
+                        
+                        field = field_map.get(raw_field)
+                        
+                        if field:
+                            # Store old value for display
+                            old_value = plan_data.get(field, 'Not set')
+                            
+                            # Update the field based on type
+                            if field in ['quota', 'sales_target']:
+                                # Convert to integer for numeric fields
+                                try:
+                                    plan_data[field] = int(value.replace(',', '').replace('$', ''))
+                                except:
+                                    plan_data[field] = value
+                            else:
+                                # For text fields, preserve original case from user input
+                                # Extract the actual value from original message (not lowercase)
+                                original_match = re.search(pattern.replace('(.+?)', '(.+?)').replace('(.+)', '(.+)'), user_msg, re.IGNORECASE)
+                                if original_match:
+                                    plan_data[field] = original_match.group(2).strip()
+                                else:
+                                    plan_data[field] = value
+                            
+                            session['plan_data'] = plan_data
+                            session.modified = True
+                            field_updated = True
+                            
+                            logger.info(f"[WIZARD] Updated {field} from '{old_value}' to '{plan_data[field]}'")
+                            
+                            # Show updated summary
+                            summary = format_plan_summary(plan_data)
+                            return {
+                                "response": f"✏️ Updated {field.replace('_', ' ')} from '{old_value}' to: {plan_data[field]}\n\n{summary}\n\n✅ Type 'submit' to save this plan, or 'edit' to make more changes."
+                            }
+                        else:
+                            logger.warning(f"[WIZARD] Could not map field '{raw_field}' to a known field")
+                            break
+                
+                if not field_updated:
+                    # Couldn't parse the edit command
+                    return {
+                        "response": "I couldn't understand what you want to change. Please use format like:\n- 'Change plan name to Q4 Champions'\n- 'Change the commission to 10%'\n- 'Update quota to 500000'\n- 'plan_name = Q4 Champions'"
+                    }
+
+            # PRIMARY APPROACH: Try NLP extraction FIRST
+            if not user_msg_lower.startswith(('change', 'update', 'edit')):
+                logger.info(f"[WIZARD] Starting field extraction for: {user_msg}")
+                
+                # STEP 1: Try NLP extraction using Claude AI
+                nlp_success = False
+                try:
+                    logger.info(f"[WIZARD] Attempting NLP extraction...")
+                    result = extract_plan_struct_from_text(user_msg, mcp_client.claude_complete)
+                    logger.info(f"[WIZARD] NLP extraction result: {result}")
+                    
+                    if result["status"] == "ok" and result["extracted"]:
+                        # Merge extracted fields with existing plan data
+                        for key, value in result["extracted"].items():
+                            if key == 'structure':  # Skip bogus fields
+                                continue
+                            if value and str(value).strip():  # Only update non-empty values
+                                plan_data[key] = value
+                                logger.info(f"[WIZARD] NLP extracted {key}: {value}")
+                        nlp_success = True
+                        
+                except Exception as e:
+                    logger.error(f"[WIZARD] NLP extraction failed: {e}")
+                
+                # STEP 2: If NLP failed, fallback to regex patterns
+                if not nlp_success:
+                    logger.info(f"[WIZARD] NLP failed, using regex fallback...")
+                    import re
+                    
+                    # Extract Q4 2025 type patterns
+                    period_match = re.search(r'(Q[1-4]\s*\d{4})', user_msg, re.IGNORECASE)
+                    if period_match:
+                        plan_data['plan_period'] = period_match.group(1)
+                        logger.info(f"[WIZARD-REGEX] Extracted period: {period_match.group(1)}")
+                    
+                    # Extract quota
+                    quota_match = re.search(r'quota[\s:]*(\d+)', user_msg, re.IGNORECASE)
+                    if quota_match:
+                        plan_data['quota'] = int(quota_match.group(1))
+                        logger.info(f"[WIZARD-REGEX] Extracted quota: {quota_match.group(1)}")
+                    
+                    # Extract target
+                    target_match = re.search(r'target[\s:]*(\d+)', user_msg, re.IGNORECASE)
+                    if target_match:
+                        plan_data['sales_target'] = int(target_match.group(1))
+                        logger.info(f"[WIZARD-REGEX] Extracted target: {target_match.group(1)}")
+                    
+                    # Extract plan name - improved patterns for "Ash_tst2 is plan name"
+                    if 'plan name' in user_msg_lower or 'name is' in user_msg_lower:
+                        name_patterns = [
+                            r'([A-Za-z0-9_]+)\s+is\s+plan\s+name',  # "Ash_tst2 is plan name"
+                            r'plan\s+name\s+is\s+([A-Za-z0-9_\s]+)',  # "plan name is XYZ"
+                            r'name\s+is\s+([A-Za-z0-9_\s]+)',         # "name is XYZ"
+                            r'called\s+([A-Za-z0-9_\s]+)',           # "called XYZ"
+                        ]
+                        for pattern in name_patterns:
+                            name_match = re.search(pattern, user_msg, re.IGNORECASE)
+                            if name_match:
+                                plan_data['plan_name'] = name_match.group(1).strip()
+                                logger.info(f"[WIZARD-REGEX] Extracted plan name: {plan_data['plan_name']}")
+                                break
+                    
+                    # Extract territory - improved patterns for "territory is north"
+                    if 'territory' in user_msg_lower:
+                        territory_patterns = [
+                            r'territory\s+is\s+([A-Za-z]+)',      # "territory is north"
+                            r'and\s+territory\s+is\s+([A-Za-z]+)',  # "and territory is north"
+                            r',\s*territory\s+([A-Za-z]+)',       # ", territory north"
+                        ]
+                        for pattern in territory_patterns:
+                            territory_match = re.search(pattern, user_msg, re.IGNORECASE)
+                            if territory_match:
+                                plan_data['territory'] = territory_match.group(1).strip()
+                                logger.info(f"[WIZARD-REGEX] Extracted territory: {plan_data['territory']}")
+                                break
+                    
+                    # Extract tiered structure
+                    if 'tiered' in user_msg_lower or '%' in user_msg:
+                        tiers = []
+                        tier_patterns = re.findall(r'(\d+)%\s*(below|above|for|at|over)?\s*(quota|target|\d+)?', user_msg, re.IGNORECASE)
+                        for rate, condition, threshold in tier_patterns:
+                            tier_info = {'rate': f"{rate}%"}
+                            if condition:
+                                if 'below' in condition.lower():
+                                    tier_info['threshold'] = 'Below quota'
+                                elif 'above' in condition.lower() or 'over' in condition.lower():
+                                    tier_info['threshold'] = 'Above quota'
+                            tiers.append(tier_info)
+                        if tiers:
+                            plan_data['tiers'] = tiers
+                            logger.info(f"[WIZARD-REGEX] Extracted tiers: {tiers}")
+                    
+                    # Extract bonus rules
+                    bonus_match = re.search(r'bonus\s+(\d+)\s+for\s+exceeding\s+(\d+)%?', user_msg, re.IGNORECASE)
+                    if bonus_match:
+                        plan_data['bonus_rules'] = f"${bonus_match.group(1)} bonus for exceeding {bonus_match.group(2)}% of target"
+                        logger.info(f"[WIZARD-REGEX] Extracted bonus: {plan_data['bonus_rules']}")
+                    
+                    # Extract dates
+                    date_pattern = r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s+(?:to|through|-)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s+\d{4}'
+                    date_match = re.search(date_pattern, user_msg, re.IGNORECASE)
+                    if date_match:
+                        date_str = date_match.group(0)
+                        parts = re.split(r'\s+(?:to|through|-)\s+', date_str, re.IGNORECASE)
+                        if len(parts) == 2:
+                            plan_data['effective_dates'] = {
+                                'start': '2025-01-01',
+                                'end': '2025-03-31'
+                            }
+                            logger.info(f"[WIZARD-REGEX] Extracted dates: {plan_data['effective_dates']}")
+                
+                # Save updated plan data
+                session["plan_data"] = plan_data
+                session.modified = True
+                
+                # Show updated summary
+                summary = format_plan_summary(plan_data)
+                
+                # Check what's still missing
+                all_fields = [
+                    'plan_name', 'plan_period', 'territory', 'quota', 
+                    'commission_structure', 'tiers', 'bonus_rules', 
+                    'sales_target', 'effective_dates'
+                ]
+                still_missing = [f for f in all_fields if not plan_data.get(f)]
+                
+                logger.info(f"[WIZARD] Still missing fields: {still_missing}")
+                
+                if not still_missing or len(still_missing) <= 2:
+                    return {
+                        "response": f"Perfect! Here's your complete plan:\n\n{summary}\n\n✅ **Ready to submit!**\nType 'submit' to save this plan, or 'edit' to make changes."
+                    }
+                else:
+                    missing_str = ', '.join([f.replace('_', ' ') for f in still_missing[:3]])
+                    return {
+                        "response": f"Great! I've updated your plan:\n\n{summary}\n\nℹ️ Still missing: {missing_str}\n\nYou can provide these details, type 'submit' to save with current info, or 'edit' to change values."
+                    }
+        
+        # Fallback for no plan data
+        return {
+            "response": "No active plan creation session. Please type 'create plan' to start creating a new commission plan."
+        }
+    
+    except Exception as e:
+        logger.error(f"[WIZARD] Critical error in handle_message_in_flow: {e}", exc_info=True)
+        return {
+            "response": f"Sorry, there was an error processing your request. Please try again or type 'clear session' to start over."
+        }
+    
+'''def format_plan_summary(plan_data):
+    """Format plan data into a Markdown summary for ReactMarkdown"""
+    lines = []
+    # Add main title as heading (see below for plain or markdown header)
+    lines.append("Perfect! Here's your complete plan:\n")
+    lines.append("## 📋 PLAN SUMMARY\n")
+
+    field_labels = {
+        'plan_name': '📝 Plan Name',
+        'plan_period': '📅 Period',
+        'territory': '🌍 Territory',
+        'quota': '🎯 Quota',
+        'commission_structure': '💰 Commission Structure',
+        'tiers': '📊 Commission Tiers',
+        'bonus_rules': '🎁 Bonus Rules',
+        'sales_target': '📈 Sales Target',
+        'effective_dates': '📆 Effective Dates'
+    }
+
+    for field, label in field_labels.items():
+        value = plan_data.get(field, 'Not specified')
+        # Handle commission tiers with bullets and a blank line before
+        if field == 'tiers' and isinstance(value, list) and value:
+            lines.append(f"**{label}:**")
+            # Markdown bullet list for commission tiers
+            for tier in value:
+                if isinstance(tier, dict):
+                    threshold = tier.get('threshold', tier.get('min', 'Unknown'))
+                    rate = tier.get('rate', tier.get('commission', 'Unknown'))
+                    lines.append(f"- {threshold}: {rate}%")
+            lines.append("")  # Add blank line after bullet list
+        else:
+            if field == 'effective_dates' and isinstance(value, dict):
+                start = value.get('start', 'Not set')
+                end = value.get('end', 'Not set')
+                value = f"{start} to {end}"
+            elif isinstance(value, list):
+                value = ', '.join(str(v) for v in value) if value else 'Not specified'
+            elif not value:
+                value = 'Not specified'
+            lines.append(f"**{label}:** {value}")
+            lines.append("")  # Always blank line after each field
+
+    # Only append submit line ONCE
+    lines.append("✅ Ready to submit!\nType 'submit' to save this plan, or 'edit' to make changes.")
+
+    # Remove duplicate submit lines if plan_data ever accidentally included it
+    output = "\n".join(line.rstrip() for line in lines if line.strip() != "")
+    # Add a final newline to finish the markdown block cleanly
+    return output + "\n"'''
+
+
+def format_plan_summary(plan_data):
+    """Format plan data into a Markdown summary for ReactMarkdown"""
+    lines = []
+    
+    # Header (added once at the start)
+    lines.append("Perfect! Here's your complete plan:")
+    lines.append("")  # Blank line
+    lines.append("## 📋 PLAN SUMMARY")
+    lines.append("")  # Blank line after header
+    
+    field_labels = {
+        'plan_name': '📝 Plan Name',
+        'plan_period': '📅 Period',
+        'territory': '🌍 Territory',
+        'quota': '🎯 Quota',
+        'commission_structure': '💰 Commission Structure',
+        'tiers': '📊 Commission Tiers',
+        'bonus_rules': '🎁 Bonus Rules',
+        'sales_target': '📈 Sales Target',
+        'effective_dates': '📆 Effective Dates'
+    }
+    
+    for field, label in field_labels.items():
+        value = plan_data.get(field, 'Not specified')
+        
+        # Special handling for commission tiers
+        if field == 'tiers' and isinstance(value, list) and value:
+            lines.append(f"**{label}:**")
+            for tier in value:
+                if isinstance(tier, dict):
+                    threshold = tier.get('threshold', tier.get('min', 'Unknown'))
+                    rate = tier.get('rate', tier.get('commission', 'Unknown'))
+                    # Ensure rate has % sign
+                    rate_str = str(rate)
+                    if not rate_str.endswith('%'):
+                        rate_str = rate_str + '%'
+                    lines.append(f"- {threshold}: {rate_str}")
+            lines.append("")  # Blank line after bullet list
+        else:
+            # Special handling for effective dates
+            if field == 'effective_dates' and isinstance(value, dict):
+                start = value.get('start', 'Not set')
+                end = value.get('end', 'Not set')
+                value = f"{start} to {end}"
+            elif isinstance(value, list):
+                value = ', '.join(str(v) for v in value) if value else 'Not specified'
+            elif not value:
+                value = 'Not specified'
+            
+            lines.append(f"**{label}:** {value}")
+            lines.append("")  # Blank line after each field
+    
+    # Submit instructions (added once at the end)
+    lines.append("✅ Ready to submit!")
+    lines.append("Type 'submit' to save this plan, or 'edit' to make changes.")
+    
+    # Join with newlines and return
+    return "\n".join(lines)
+
+
 
 # --- COMPLETELY REWRITTEN: Build payload for POST from session data ---
-def build_payload_from_session():
-    pd = session.get("plan_data", {})
-    opts = session.get("options", {})
+
+def build_simple_payload_from_plan_data(plan_data):
+    """
+    Build API payload matching the exact structure your .NET backend expects
+    """
+    # Get dates with defaults
+    effective_dates = plan_data.get('effective_dates', {})
+    if isinstance(effective_dates, dict):
+        start_date = effective_dates.get('start', datetime.now().strftime("%Y-%m-%d"))
+        end_date = effective_dates.get('end', (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d"))
+    else:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
     
-    calc_name = pd.get("calculation_schedule")
-    pay_name = pd.get("payment_schedule")
-    assignee_name = pd.get("assignee_name")
-    
-    # convert schedule names to ids if available
-    calc_id = None; pay_id = None
-    calc_label = ""; pay_label = ""
-    for s in (opts.get("schedules") or []):
-        if option_label(s).lower() == (calc_name or "").lower():
-            calc_id = s.get("id")
-            calc_label = option_label(s)
-        if option_label(s).lower() == (pay_name or "").lower():
-            pay_id = s.get("id")
-            pay_label = option_label(s)
-    
-    # Find assignee details from assignee_objects
-    assignee_id = None
-    table_id = None
-    table_name = ""
-    for a in (opts.get("assignee_objects") or []):
-        assignee_label = a.get("objectType") or a.get("label") or a.get("objectName") or a.get("name")
-        if assignee_label and assignee_label.lower() == (assignee_name or "").lower():
-            assignee_id = a.get("id")
-            table_id = a.get("id")  # Using same ID for both
-            table_name = a.get("tableName") or "hierarchy_master_instance"
-            break
-    
-    # resolve plan types id
-    def plan_type_id_by_name(name):
-        for p in fetch_plan_types():
-            if (p.get("planName") or "").strip().lower() == (name or "").strip().lower():
-                return p.get("id")
-        return None
-    
-    # Convert date format from YYYY-MM-DD to YYYY-MM-DDTHH:MM:SS
+    # Format date properly
     def format_datetime(date_str, is_end_date=False):
         if not date_str:
             return ""
         try:
-            # Parse the input date
+            if 'T' in date_str:
+                return date_str
             dt = datetime.strptime(date_str, "%Y-%m-%d")
             if is_end_date:
                 return dt.strftime("%Y-%m-%dT23:59:59")
@@ -1397,166 +1341,100 @@ def build_payload_from_session():
         except:
             return date_str
     
+    # Build plan conditions with proper structure
     plan_conditions = []
     
-    for r in pd.get("plan_rules", []):
-        plan_type_name = r.get("plan_type")
-        plan_type_id = plan_type_id_by_name(plan_type_name)
-        
-        # Create JsonData structure
-        json_data_list = []
-        
-        for a in r.get("assignments", []):
-            # Build tiers structure
-            tiers = []
-            for ts in a.get("tier_slabs", []):
-                tier = {
-                    "from_value": ts.get("fromValue", ""),
-                    "to_value": ts.get("toValue", "") if ts.get("toValue") else "",
-                    "commission": ts.get("commission", "")
-                }
-                tiers.append(tier)
-            
-            # Build PlanValueRangesDto structure
-            plan_value_ranges = {}
-            
-            # Initialize all parameter arrays
-            plan_value_ranges["BusinessPartner"] = []
-            plan_value_ranges["Product"] = []
-            plan_value_ranges["Territory"] = []
-            plan_value_ranges["Plant"] = []
-            plan_value_ranges["Group"] = []
-            
-            # Map combinations to appropriate parameter arrays
-            ass_objs = opts.get("assignee_objects") or []
-            for combo in a.get("combinations", []):
-                for param, label in combo.items():
-                    # Find the ID for this label
-                    resolved_id = None
-                    for ao in ass_objs:
-                        lbl = ao.get("objectType") or ao.get("label") or ao.get("name")
-                        if lbl and lbl.strip().lower() == str(label).strip().lower() and (ao.get("type") or "").strip().lower() == param.strip().lower():
-                            resolved_id = ao.get("id")
-                            break
-                    
-                    if resolved_id:
-                        # Map parameter to correct field name
-                        param_lower = param.lower()
-                        if param_lower == "businesspartner":
-                            plan_value_ranges["BusinessPartner"].append(resolved_id)
-                        elif param_lower == "product":
-                            plan_value_ranges["Product"].append(resolved_id)
-                        elif param_lower == "territory":
-                            plan_value_ranges["Territory"].append(resolved_id)
-                        elif param_lower == "plant":
-                            plan_value_ranges["Plant"].append(resolved_id)
-                        elif param_lower == "group":
-                            plan_value_ranges["Group"].append(resolved_id)
-            
-            # Get currency ID
-            cur_val = a.get("currency")
-            cur_id = 78  # Default fallback
-            for c in (opts.get("currency") or []):
-                if (c.get("currencyCode") or c.get("currencyName") or "").strip().lower() == (cur_val or "").strip().lower() or option_label(c).lower() == (cur_val or "").lower():
-                    cur_id = c.get("id")
-                    break
-            
-            json_data_item = {
-                "commission": "",
-                "tiers": tiers,
-                "PlanValueRangesDto": [plan_value_ranges],
-                "currency": cur_id
-            }
-            json_data_list.append(json_data_item)
-        
-        # Build PlanAssignments structure (for backward compatibility)
-        assignments_out = []
-        for a in r.get("assignments", []):
-            # Build plan_ranges with correct field names
-            plan_ranges = []
-            for ts in a.get("tier_slabs", []):
-                plan_ranges.append({
-                    "from_value": int(ts.get("fromValue", 0)) if ts.get("fromValue", "").isdigit() else ts.get("fromValue", ""),
-                    "to_value": int(ts.get("toValue", 0)) if ts.get("toValue", "") and ts.get("toValue", "").isdigit() else (ts.get("toValue") if ts.get("toValue") else None),
-                    "commission": int(ts.get("commission", 0)) if ts.get("commission", "").isdigit() else ts.get("commission", "")
-                })
-            
-            # Get currency ID
-            cur_val = a.get("currency")
-            cur_id = 78  # Default fallback
-            for c in (opts.get("currency") or []):
-                if (c.get("currencyCode") or c.get("currencyName") or "").strip().lower() == (cur_val or "").strip().lower() or option_label(c).lower() == (cur_val or "").lower():
-                    cur_id = c.get("id")
-                    break
-            
-            assignments_out.append({
-                "plan_assignments": [],  # Empty as per example
-                "plan_ranges": plan_ranges,
-                "currency": cur_id,
-                "fromdate": r.get("valid_from", ""),
-                "todate": r.get("valid_to", "")
-            })
-        
-        rule_obj = {
-            "PlanType": plan_type_name,
-            "PlanTypeMasterId": plan_type_id,
-            "Sequence": r.get("sequence", 100),
-            "Step": r.get("step", 10),
-            "PlanDescription": f"{plan_type_name} plan",  # Generated description
-            "PlanParamsJson": json.dumps([p.lower() for p in r.get("plan_params", [])]),  # Lowercase param names
-            "Tiered": r.get("category_type") == "Tiered",
-            "CategoryType": r.get("category_type"),
-            "RangeType": r.get("range_type"),
-            "ValueType": r.get("value_type"),
-            "ValidFrom": r.get("valid_from", ""),
-            "ValidTo": r.get("valid_to", ""),
-            "PlanBase": r.get("plan_base"),
-            "BaseValue": r.get("base_value"),
-            "JsonData": json_data_list,
-            "ShowAssignment": True,
-            "isStep": r.get("step", 0) > 0,
-            "AbsoluteCalculation": r.get("absolute_calculation", False),
-            "PlanAssignments": assignments_out
-        }
-        plan_conditions.append(rule_obj)
+    # Create tiers structure
+    json_data_list = []
+    tiers = []
     
-    # Build final payload with correct structure
+    if plan_data.get('tiers'):
+        for tier in plan_data.get('tiers', []):
+            if isinstance(tier, dict):
+                tiers.append({
+                    "from_value": "0",
+                    "to_value": "100000",
+                    "commission": tier.get('rate', '5').replace('%', '')
+                })
+    else:
+        # Default tier based on commission_structure
+        commission = plan_data.get('commission_structure', '8%').replace('%', '')
+        tiers.append({
+            "from_value": "0",
+            "to_value": "",
+            "commission": commission
+        })
+    
+    json_data_item = {
+        "commission": "",
+        "tiers": tiers,
+        "PlanValueRangesDto": [{
+            "BusinessPartner": [],
+            "Product": [],
+            "Territory": [],
+            "Plant": [],
+            "Group": []
+        }],
+        "currency": 78  # Default USD
+    }
+    json_data_list.append(json_data_item)
+    
+    # Build the rule
+    rule = {
+        "PlanType": "Commission",
+        "PlanTypeMasterId": 1,
+        "Sequence": 100,
+        "Step": 0,
+        "PlanDescription": f"{plan_data.get('plan_name', 'Commission')} Plan",
+        "PlanParamsJson": "[]",  # Empty for now
+        "Tiered": bool(plan_data.get('tiers')),
+        "CategoryType": "Tiered" if plan_data.get('tiers') else "Flat",
+        "RangeType": "Amount",
+        "ValueType": "Percentage",
+        "ValidFrom": start_date,
+        "ValidTo": end_date,
+        "PlanBase": "Revenue",
+        "BaseValue": "Net",
+        "JsonData": json_data_list,
+        "ShowAssignment": True,
+        "isStep": False,
+        "AbsoluteCalculation": False,
+        "PlanAssignments": []
+    }
+    plan_conditions.append(rule)
+    
+    # Get org and client IDs
+    org_id = getattr(request, "org_id", None)
+    client_id = get_client_id_for_org(org_id) if org_id else None
+    
+    # Build final payload matching PostProgramCreation structure
     payload = {
         "id": 0,
-        "OrgCode": "",
-        "PaymentSchedule": pay_id,
-        "ProgramName": pd.get("plan_name"),
-        "CalculationSchedule": calc_id,
-        "ValidFrom": format_datetime(pd.get("valid_from"), False),
-        "ValidTo": format_datetime(pd.get("valid_to"), True),
+        "OrgCode": getattr(request, "org_code", ""),
+        "PaymentSchedule": 1,  # Default schedule ID
+        "ProgramName": plan_data.get('plan_name', 'Untitled Plan'),
+        "CalculationSchedule": 1,  # Default schedule ID
+        "ValidFrom": format_datetime(start_date, False),
+        "ValidTo": format_datetime(end_date, True),
         "ReviewedBy": "",
         "ReviewStatus": "",
-        "ObjectType": pd.get("object_type"),
-        "TableId": table_id,
-        "AssigneeId": assignee_id,
-        "TableName": table_name,
-        "AssigneeName": assignee_name,
+        "ObjectType": "Invoices",
+        "TableId": 1,  # Default
+        "AssigneeId": 1,  # Default
+        "TableName": "hierarchy_master_instance",
+        "AssigneeName": plan_data.get('territory', 'All'),
         "PlanConditionsDto": plan_conditions,
-        "CalculationScheduleLabel": calc_label,
-        "PaymentScheduleLabel": pay_label,
+        "CalculationScheduleLabel": "Default Schedule",
+        "PaymentScheduleLabel": "Default Schedule",
         "Id": 0
     }
     
-    client_id = session.get("client_id") or getattr(request, "client_id", None)
-    org_id = session.get("org_id") or None
-    client_code = session.get("client_code") or None
-    org_code = session.get("org_code") or None
-
-    if client_id:
-        payload["client_id"] = client_id    # If used in your API/DB
     if org_id:
-        payload["org_id"] = org_id          # If used in your API/DB
-    if client_code:
-        payload["client_code"] = client_code
-    if org_code:
-        payload["org_code"] = org_code
-        
-    logger.info("[build_payload_from_session] NEW payload preview: " + json.dumps(payload)[:1500])
+        payload["org_id"] = org_id
+    if client_id:
+        payload["client_id"] = client_id
+    
+    logger.info(f"[build_simple_payload] Generated payload: {json.dumps(payload, indent=2)[:1000]}")
     return payload
 
 @app.route("/chat/history", methods=["GET"])
@@ -1587,105 +1465,230 @@ def chat_history():
 def chat_endpoint():
     data = request.json or {}
     user_msg = (data.get("message") or "").strip()
-    user_id = data.get("user_id") or data.get("userId") or None
+
+    # Force permanent session
+    session.permanent = True
+
+    # DEBUG: Log session state at start of request
+    logger.info(f"[SESSION-DEBUG] Request start - Session ID: {session.get('_id', 'NO_ID')}")
+    logger.info(f"[SESSION-DEBUG] Session mode: {session.get('mode', 'NO_MODE')}")
+
+    # DEBUG: Check current session state
+    logger.info(f"[SESSION-DEBUG] Current session mode: {session.get('mode')}")
+    logger.info(f"[SESSION-DEBUG] Session keys: {list(session.keys())}")
+    
+    #user_id = data.get("user_id") or data.get("userId") or None
+    # Get user_id from BOTH request body AND URL parameters
+    user_id = (
+        data.get("user_id") or 
+        data.get("userId") or 
+        request.args.get("user_id") or 
+        request.args.get("userId") or 
+        getattr(request, "user_id", None) or  # ← From JWT
+        None
+    )
+
+    # DEBUG: Log where user_id came from
+    if user_id:
+        if data.get("user_id") or data.get("userId"):
+            logger.info(f"[DEBUG-USER] user_id from request body: {user_id}")
+        elif request.args.get("user_id") or request.args.get("userId"):
+            logger.info(f"[DEBUG-USER] user_id from URL params: {user_id}")
+        else:
+            logger.info(f"[DEBUG-USER] user_id from JWT token: {user_id}")
+    else:
+        logger.error(f"[DEBUG-USER] No user_id found in body, params, or JWT!")
+
+    # If no user_id found, extract from JWT token
+    if not user_id:
+        user_id = getattr(request, "user_id", None)  # From JWT @verify_jwt_token
+        if user_id:
+            logger.info(f"[DEBUG-USER] user_id extracted from JWT: {user_id}")
+        else:
+            logger.error(f"[DEBUG-USER] No user_id found in JWT either!")
+
+    # DEBUG: Log where user_id came from
+    if user_id:
+        if data.get("user_id") or data.get("userId"):
+            logger.info(f"[DEBUG-USER] user_id from request body: {user_id}")
+        else:
+            logger.info(f"[DEBUG-USER] user_id from URL params: {user_id}")
+    else:
+        logger.error(f"[DEBUG-USER] No user_id found in body or params!")
+
     org_id = getattr(request, "org_id", None)
     client_id = get_client_id_for_org(org_id) if org_id else None
-
-    #Get session ID
-    #session_id = f"{user_id}_{int(time.time())}"
     session_id = data.get("session_id") or f"{user_id}_{int(time.time())}"
 
-    #save user messages
-    save_message(client_id, session_id, {"sender": "user", "text": user_msg})
+    logger.info(f"[DEBUG-SESSION] Using session_id: {session_id}")
 
-    # Handle the chat logic (bot reply)
-    #bot_response = handle_chat_logic(user_msg, org_id=org_id, client_id=client_id)
-    result = mcp_client.process_natural_language_query(user_msg, org_id=org_id, client_id=client_id)
-    # --- PATCH FOR 429/RATE LIMIT ERRORS ---
-    error_text = result.get("error") or result.get("formatted_response") or result.get("formattedresponse") or ""
-    if "429" in error_text or "rate_limit" in error_text:
-        bot_response = "The server is currently busy or overloaded. Please wait a few seconds and try again."
-    else:
-        bot_response = result.get("formattedresponse") or result.get("response") or str(result)
-
-     #Save bot reply
-    save_message(client_id, session_id, {"sender": "bot", "text": bot_response})
-
-    # 5. Optionally, get all chat so far
-    history = get_chat_history(client_id, session_id)
-    return jsonify({"response": bot_response, "history": history})
-
-    #logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id}")
-    logger.info(f"[chat] User message: '{user_msg}' user_id: {user_id},client_id: {client_id}") #client_id: {getattr(request,'client_id',None)}")
-
-    # If user_id provided, load server-side saved session state (so refresh/browser-independent)
+    # Session state reload (server-side per user)
     if user_id:
         state = load_user_state(user_id) or {}
-        # copy keys into flask session
+        logger.info(f"[SESSION-DEBUG] Loaded user state for {user_id}: {list(state.keys())}")
+        # session.clear()
+        jwt = session.get("jwt_token")
         session.clear()
+        if jwt:
+            session["jwt_token"] = jwt
+
         for k, v in state.items():
             session[k] = v
+            logger.info(f"[SESSION-DEBUG] Restored session key: {k} = {type(v)}")
+
         session.modified = True
+
+        # Debug: Log final session state
+        logger.info(f"[SESSION-DEBUG] Final session after restore: {list(session.keys())}")
+        if session.get("mode"):
+            logger.info(f"[SESSION-DEBUG] Session mode after restore: {session.get('mode')}")
+            logger.info(f"[SESSION-DEBUG] Plan data exists: {bool(session.get('plan_data'))}")
+
+        # Save user message
+        save_message(client_id, session_id, {"sender": "user", "text": user_msg})
+
+    # PRIORITY 1: If already in wizard mode, handle directly (bypass ALL intent detection)
+    if session.get("mode") == "plan_creation":
+        logger.info("🎯 [WIZARD] User already in plan creation mode - bypassing intent detection")
+        resp = handle_message_in_flow(user_msg)
+        session.modified = True  # Force session save
+        if user_id:
+            save_user_state(user_id, dict(session))
+        save_message(client_id, session_id, {"sender": "bot", "text": resp.get("response")})
+        history = get_chat_history(client_id, session_id)
+        return jsonify({"response": resp.get("response"), "history": history})
     
-    # Commands: cancel/clear session
+
+
+    # Continue plan flow if in progress (wizard or paragraph)
+    
+
+    # Handle session clear
     if user_msg.lower() in ["cancel", "clear session", "/clear_session"]:
+        # session.clear()
+        jwt = session.get("jwt_token")
         session.clear()
+        if jwt:
+            session["jwt_token"] = jwt
+
         if user_id:
             clear_user_state(user_id)
         return jsonify({"response": "Session cleared. You can now ask questions or start plan creation."})
+
+    # --- Intent: Plan (Wizard or Paragraph, powered by LLM) ---
+    from intent_detection import is_plan_creation_intent
+    from intent_detection import extract_plan_fields_claude
+
+    logger.info(f"[DEBUG-INTENT] Checking plan intent for message: {user_msg}")
+    plan_intent = is_plan_creation_intent(user_msg, mcp_client.claude_complete)
+    logger.info(f"[DEBUG-INTENT] Plan intent for message: {plan_intent}")
     
-    # Check if user is already in plan creation mode
-    if session.get("mode") == "plan_creation":
-        logger.info("🎯 [PLAN] User is in plan creation mode, continuing flow")
-        resp = handle_message_in_flow(user_msg)
-        # save server-side if user_id provided
+    if plan_intent:
+    # if is_plan_creation_intent(user_msg, mcp_client.claude_complete): 
+        #logger.info("🎯 [PLAN] Starting plan creation flow (NLP Plan Builder)")
+        logger.info("🎯 [PLAN] Starting NLP Plan Builder flow, raw user message: %s", user_msg)
+        # DEBUG: Check user_id availability
+        logger.info(f"[DEBUG-SAVE] user_id available for save: {user_id}")
+        logger.info(f"[DEBUG-SAVE] user_id type: {type(user_id)}")
+
+        result = extract_plan_struct_from_text(user_msg, mcp_client.claude_complete)
+        logger.info("[PLAN] NLP extraction result: %s", result)
+        
+        # CRITICAL: Set session mode and force session save
+        session['mode'] = 'plan_creation'
+        session.modified = True
+        logger.info(f"[SESSION-DEBUG] Set session mode to plan_creation and marked modified")
+
+        # DEBUG: Check session before save
+        logger.info(f"[DEBUG-SAVE] Session before save attempt: {list(session.keys())}")
+
+        # CRITICAL: Save immediately after setting mode (ALWAYS, regardless of NLP result)
         if user_id:
-            save_user_state(user_id, dict(session))
-        return jsonify(resp)
-    
-    # Intent recognition for new conversations
-    if is_plan_creation_intent(user_msg):
-        logger.info("🎯 [PLAN] Starting plan creation flow")
-        start_plan_creation_session()
-        # persist if user_id provided
-        if user_id:
-            save_user_state(user_id, dict(session))
-        return jsonify({"response": "Started plan creation. Please enter Plan Name:"})
-    
-    if is_database_query_intent(user_msg):
-        logger.info("🗄️ [DB] Processing database query")
-        try:
-            db_response = handle_database_query(user_msg)
-            
-            # persist session state if requested
+            logger.info(f"[DEBUG-SAVE] Attempting to save state for user_id: {user_id}")
+            try:
+                save_user_state(user_id, dict(session))
+                logger.info(f"[SESSION-DEBUG] Saved user state with keys: {list(dict(session).keys())}")
+                logger.info(f"[DEBUG-SAVE] Save successful!")
+            except Exception as e:
+                logger.error(f"[DEBUG-SAVE] Save failed with error: {e}")
+        else:
+            logger.error(f"[DEBUG-SAVE] Cannot save - user_id is None/empty: {user_id}")
+
+        if result["status"] == "ok":
+            extracted = result["extracted"]
+            missing = result["missing_fields"]
+            logger.info("[PLAN] Initial extracted fields: %s", extracted)
+            logger.info("[PLAN] Missing fields to prompt: %s", missing)
+            session["mode"] = "plan_creation"
+            session["plan_data"] = extracted
+            session.modified = True
+
+            # Save again after adding plan data
             if user_id:
                 save_user_state(user_id, dict(session))
-            
-            return jsonify({"response": db_response})
-            
+                logger.info(f"[SESSION-DEBUG] Saved user state with keys: {list(dict(session).keys())}")
+
+            if missing:
+                question = f"Please provide the following missing details for your plan: {', '.join(missing)}"
+            else:
+                #summary = json.dumps(extracted, indent=2)
+                #question = f"Here's a summary of your new plan. Do you want to submit or edit?\n{summary}"
+                summary = format_plan_summary(extracted) 
+                question = summary
+            logger.info("[PLAN] Wizard initial response sent: %s", question)
+            save_message(client_id, session_id, {"sender": "bot", "text": question})
+            history = get_chat_history(client_id, session_id)
+            return jsonify({"response": question, "history": history})
+        else:
+            logger.error("[PLAN] NLP extraction error: %s", result.get("error"))
+            reply = "Sorry, I couldn't extract the plan details due to an error. Please rephrase or try again."
+            save_message(client_id, session_id, {"sender": "bot", "text": reply})
+            history = get_chat_history(client_id, session_id)
+            return jsonify({"response": reply, "history": history})
+        
+
+    # --- Database Query ---
+    if is_database_query_intent(user_msg):
+        logger.info("🗄️ [DB] Processing database query")
+
+        # Identify pagination-triggering user queries
+        UM = user_msg.lower().strip()
+        if "show all plans" in UM:
+            reset_plan_offset()
+        elif "show more" in UM:
+            increment_plan_offset(10)  # or your preferred page size
+
+        offset = get_plan_offset()
+        logger.info(f"[PAGINATION] Current plan offset: {offset}")
+        try:
+            db_response = handle_database_query(user_msg, offset=offset)
+            if user_id:
+                save_user_state(user_id, dict(session))
+            save_message(client_id, session_id, {"sender": "bot", "text": db_response})
+            history = get_chat_history(client_id, session_id)
+            return jsonify({"response": db_response, "history": history})
         except Exception as e:
             logger.error(f"❌ [DB] Error in database processing: {e}")
+            return jsonify({"response": f"Sorry, error: {e}"})
 
-    # Fall back to RAG for general queries
+    # --- RAG fallback ---
     logger.info("🧠 [RAG] Processing general query")
     try:
         rag_response = handle_rag_query(user_msg)
-        
-        # persist session state if requested
         if user_id:
             save_user_state(user_id, dict(session))
-        
-        return jsonify({"response": rag_response})
-        
+        save_message(client_id, session_id, {"sender": "bot", "text": rag_response})
+        history = get_chat_history(client_id, session_id)
+        return jsonify({"response": rag_response, "history": history})
     except Exception as e:
         logger.error(f"❌ [RAG] Error in RAG processing: {e}")
-        
-        # persist session state if requested
+        error_text = str(e)
+        if "429" in error_text or "rate_limit_error" in error_text or "Too Many Requests" in error_text:
+            return jsonify({"response": "The system is currently handling too many AI requests. Please wait a few seconds and try again."})
         if user_id:
             save_user_state(user_id, dict(session))
-        
-        return jsonify({"response": f"I encountered an error while processing your question: {str(e)}. Please try again or contact support."})
-
+        return jsonify({"response": f"Sorry, error: {e}"})
+    
 # --- Home route ---
 @app.route("/", methods=["GET"])
 def home():
@@ -1784,6 +1787,7 @@ def login():
 
     # Store in session
     session['jwt_token'] = token
+    print("[DEBUG] jwt_token after setting in session:", session.get('jwt_token'))
     return jsonify({'success': True})
 
 # --- Run server ---
