@@ -6,9 +6,9 @@ from mcp_client import mcp_client
 
 logger = logging.getLogger(__name__)
 
-def execute_query(user_query: str, context: str = "", org_id=None, client_id=None) -> dict:
+def execute_query(user_query: str, context: str = "", org_id=None, client_id=None, offset=0) -> dict:
     """Execute natural language query using MCP + Claude"""
-    return mcp_client.process_natural_language_query(user_query, context, org_id=org_id, client_id=client_id)
+    return mcp_client.process_natural_language_query(user_query, context, org_id=org_id, client_id=client_id, offset=offset)
 
 def format_query_response(result: dict) -> str:
     """Format the response for display"""
@@ -30,7 +30,7 @@ def format_query_response(result: dict) -> str:
         parts = [f"{k.replace('_', ' ')}: {v}" for k, v in row.items() if v is not None]
         return "Here's what I found: " + ", ".join(parts)
     
-    lines = [f"I found {len(data)} results:"]
+    '''lines = [f"I found {len(data)} results:"]
     for i, row in enumerate(data[:5], 1):
         summary = ", ".join([f"{k.replace('_', ' ')}: {v}" for k, v in row.items() 
                            if v is not None and k in ['program_name', 'plan_type', 'status']])
@@ -39,7 +39,18 @@ def format_query_response(result: dict) -> str:
     if len(data) > 5:
         lines.append(f"... and {len(data) - 5} more results")
     
+    return "\n".join(lines)'''
+
+    lines = [f"I found {len(data)} results:"]
+    for i, row in enumerate(data[:5], 1):
+        summary = ", ".join([f"{k.replace('_', ' ')}: {v}" for k, v in row.items()
+        if v is not None and k in ['program_name', 'plan_type', 'status']])
+        # Markdown bullet list:
+        lines.append(f"- {summary}")
+    if len(data) > 5:
+        lines.append(f"... and {len(data) - 5} more results")
     return "\n".join(lines)
+
 
 # Make mcp_client accessible
 mcp_client = mcp_client
