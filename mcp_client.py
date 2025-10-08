@@ -1,3 +1,9 @@
+###########################################################################################################################
+
+####################################################################################################################################
+
+
+
 import os
 import sys
 import subprocess
@@ -6,6 +12,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
@@ -22,6 +29,20 @@ try:
 except ImportError:
     logger.error("❌ anthropic package not installed. Install with: pip install anthropic")
     raise RuntimeError("anthropic package is required")
+
+def patch_sql_for_pagination(sqlquery, offset):
+    offset = offset if isinstance(offset, int) and offset >= 0 else 0
+    sql_upper = sqlquery.upper()
+    if "LIMIT" in sql_upper:
+        # Replace existing OFFSET or append if missing
+        if "OFFSET" in sql_upper:
+            sqlquery = re.sub(r'OFFSET\s+\d+', f'OFFSET {offset}', sqlquery, flags=re.IGNORECASE)
+        else:
+            sqlquery += f" OFFSET {offset}"
+    else:
+        sqlquery += f" LIMIT 10 OFFSET {offset}"
+    return sqlquery
+
 
 class MCPPostgreSQLClient:
     def __init__(self):
@@ -237,9 +258,17 @@ class MCPPostgreSQLClient:
             
         except Exception as e:
             logger.error(f"❌ SQL generation failed: {e}")
+            err_txt = str(e)
+            if "429" in err_txt or "rate_limit_error" in err_txt or "Too Many Requests" in err_txt:
+                return {
+                    'success': False,
+                    'error': 'The system is currently handling too many requests to the AI service. Please wait a few seconds and try again.', #f'Cannot generate SQL: {str(e)}',
+                    'sql_query': '',
+                    'original_query': user_query
+                }
             return {
                 'success': False,
-                'error': f'Cannot generate SQL: {str(e)}',
+                'error': 'Sorry, an internal error occurred while generating SQL.',
                 'sql_query': '',
                 'original_query': user_query
             }
@@ -283,12 +312,28 @@ class MCPPostgreSQLClient:
         
         return "\n".join(lines)
 
-    def execute_query_with_claude(self, user_query: str, org_id=None, client_id=None ) -> Dict[str, Any]:
+    def execute_query_with_claude(self, user_query: str, org_id=None, client_id=None, offset=0) -> Dict[str, Any]:
         """Complete MCP pipeline: NL → SQL → Execute → Format"""
         try:
             # Step 1: Generate SQL using Claude (DYNAMIC)
-            sql_result = self.natural_language_to_sql(user_query, org_id=org_id, client_id=client_id)
             
+            sql_result = self.natural_language_to_sql(user_query, org_id=org_id, client_id=client_id)
+            sql_result['sql_query'] = patch_sql_for_pagination(sql_result['sql_query'], offset)
+            '''# BEGIN PATCH
+            offset = getattr(self, "plan_offset", 0) if hasattr(self, "plan_offset") else 0
+            sqlquery = sql_result['sql_query']
+            if "LIMIT" in sqlquery.upper():
+                if "OFFSET" not in sqlquery.upper():
+                    sqlquery += f" OFFSET {offset}"
+            else:
+                sqlquery += f" LIMIT 10 OFFSET {offset}"
+            sql_result['sql_query'] = sqlquery
+            # END PATCH'''
+
+            exec_result = self.send_tool_call("execute_sql_query", {
+            "sql": sql_result['sql_query']
+            })
+
             if not sql_result.get('success'):
                 return {
                     'success': False,
@@ -300,6 +345,7 @@ class MCPPostgreSQLClient:
             logger.info(f"📊 EXECUTING SQL via MCP Server")
             exec_result = self.send_tool_call("execute_sql_query", {
                 "sql": sql_result['sql_query']
+            
             })
             
             if exec_result.get('success'):
@@ -321,6 +367,7 @@ class MCPPostgreSQLClient:
             return {
                 'success': True,
                 'data': exec_result.get('data', []),
+                "response": formatted,
                 'formatted_response': formatted,
                 'sql_query': sql_result['sql_query'],
                 'row_count': exec_result.get('row_count', 0),
@@ -395,10 +442,29 @@ class MCPPostgreSQLClient:
             # Last resort fallback - just show row count
             return f"Found {len(data)} results matching your query."
 
-    def process_natural_language_query(self, user_query: str, context: str = "", org_id=None, client_id=None) -> Dict[str, Any]:
+    def process_natural_language_query(self, user_query: str, context: str = "", org_id=None, client_id=None, offset=0) -> Dict[str, Any]:
         """Main entry point for MCP query processing"""
         logger.info(f"🎯 Processing query: '{user_query}' (org_id={org_id}, client_id={client_id})")
-        return self.execute_query_with_claude(user_query, org_id=org_id, client_id=client_id )
+        return self.execute_query_with_claude(user_query, org_id=org_id, client_id=client_id, offset=offset)
+    
+    def claude_complete(self, prompt, max_tokens=400, temperature=0):
+        """
+        Call Claude (Anthropic) directly for generic completions with plain text output.
+        """
+        try:
+            if not self.anthropic_client:
+                raise RuntimeError("Anthropic client not initialized")
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text.strip()
+        except Exception as e:
+            if "429" in str(e) or "rate_limit_error" in str(e) or "Too Many Requests" in str(e):
+                return "The server is handling too many requests at the moment. Please try again in a few seconds."
+            raise
 
     def __del__(self):
         """Cleanup MCP server on exit"""
