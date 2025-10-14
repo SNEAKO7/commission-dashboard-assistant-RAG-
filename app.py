@@ -545,6 +545,7 @@ def start_plan_creation_session():
     }
     session["current_rule"] = None
     session["current_assignment"] = None
+    session["awaiting_final_confirmation"] = False
     session["org_id"]   = getattr(request, "org_id", None)
     session["org_code"] = getattr(request, "org_code", None)
     session["user_id"]  = getattr(request, "user_id", None)
@@ -837,7 +838,81 @@ def handle_message_in_flow(user_msg):
             user_msg_lower = user_msg.lower().strip()
             
             # Check if user wants to submit
-            if any(word in user_msg_lower for word in ['submit', 'save', 'confirm', 'yes', 'looks good', 'correct']):
+            if any(word in user_msg_lower for word in ['submit', 'save']):
+                # Check if we have minimum required fields
+                required_fields = ['plan_name']
+                missing_required = [f for f in required_fields if not plan_data.get(f)]
+                
+                if missing_required:
+                    return {
+                        "response": f"Cannot submit yet. Plan name is required. Please provide a plan name first."
+                    }
+                
+                # SHOW COMPLETE SUMMARY with ALL fields (including empty)
+                logger.info("[WIZARD] User requested submit - showing final confirmation with ALL fields")
+                session['awaiting_final_confirmation'] = True
+                session.modified = True
+                
+                #if user_id:
+                    #save_user_state(user_id, dict(session))
+                
+                # Generate complete summary showing ALL fields
+                complete_summary = format_plan_summary(plan_data, show_all_fields=True)
+                
+                return {
+                    "response": complete_summary
+                }
+
+            # Check for FINAL CONFIRMATION (SECOND STEP: Actually save)
+            if user_msg_lower.strip() == 'confirm' and session.get('awaiting_final_confirmation'):
+                logger.info("[WIZARD] User confirmed - proceeding with actual save")
+                
+                # Clear the confirmation flag
+                session['awaiting_final_confirmation'] = False
+                session.modified = True
+                
+                # Build and submit the plan
+                try:
+                    # Log what we're about to save
+                    logger.info(f"[WIZARD] Saving plan to database with data: {json.dumps(plan_data, indent=2)}")
+                    
+                    # Use your EXISTING API submission
+                    resp = post_program_creation(plan_data)
+                    
+                    # Clear session on success
+                    if isinstance(resp, dict) and not resp.get("error"):
+                        jwt = session.get("jwt_token")
+                        session.clear()
+                        if jwt:
+                            session["jwt_token"] = jwt
+                        
+                        return {
+                            "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully!\n\nYou can now create another plan or ask me questions about existing plans."
+                        }
+                    else:
+                        error_msg = resp.get('error', 'Unknown error') if isinstance(resp, dict) else str(resp)
+                        return {
+                            "response": f"❌ Error saving plan: {error_msg}\n\nPlease check the details and try again, or type 'edit' to modify the plan."
+                        }
+                        
+                except Exception as e:
+                    logger.error(f"[WIZARD] Error submitting plan: {e}")
+                    return {
+                        "response": f"❌ Error saving plan: {str(e)}\n\nPlease try again or contact support."
+                    }
+
+            # Handle cancel during confirmation
+            if user_msg_lower.strip() == 'cancel' and session.get('awaiting_final_confirmation'):
+                session['awaiting_final_confirmation'] = False
+                session.modified = True
+                
+                #if user_id:
+                    #save_user_state(user_id, dict(session))
+                
+                return {
+                    "response": "Plan submission cancelled. You can continue editing or type 'submit' again when ready."
+                }
+            ''' if any(word in user_msg_lower for word in ['submit', 'save', 'confirm', 'yes', 'looks good', 'correct']):
                 # Check if we have minimum required fields
                 required_fields = ['plan_name']  # Minimum required
                 missing_required = [f for f in required_fields if not plan_data.get(f)]
@@ -873,10 +948,10 @@ def handle_message_in_flow(user_msg):
                     logger.error(f"[WIZARD] Error submitting plan: {e}")
                     return {
                         "response": f"❌ Error saving plan: {str(e)}\n\nPlease try again or contact support."
-                    }
+                    }'''
  
 
-                ''' # Build and submit the plan
+            ''' # Build and submit the plan
                 try:
                     # REAL DATABASE SUBMISSION (replace the fake one)
                     logger.info(f"[WIZARD] Submitting plan to database: {plan_data}")
@@ -1197,60 +1272,8 @@ def handle_message_in_flow(user_msg):
         return {
             "response": f"Sorry, there was an error processing your request. Please try again or type 'clear session' to start over."
         }
-    
+
 '''def format_plan_summary(plan_data):
-    """Format plan data into a Markdown summary for ReactMarkdown"""
-    lines = []
-    # Add main title as heading (see below for plain or markdown header)
-    lines.append("Perfect! Here's your complete plan:\n")
-    lines.append("## 📋 PLAN SUMMARY\n")
-
-    field_labels = {
-        'plan_name': '📝 Plan Name',
-        'plan_period': '📅 Period',
-        'territory': '🌍 Territory',
-        'quota': '🎯 Quota',
-        'commission_structure': '💰 Commission Structure',
-        'tiers': '📊 Commission Tiers',
-        'bonus_rules': '🎁 Bonus Rules',
-        'sales_target': '📈 Sales Target',
-        'effective_dates': '📆 Effective Dates'
-    }
-
-    for field, label in field_labels.items():
-        value = plan_data.get(field, 'Not specified')
-        # Handle commission tiers with bullets and a blank line before
-        if field == 'tiers' and isinstance(value, list) and value:
-            lines.append(f"**{label}:**")
-            # Markdown bullet list for commission tiers
-            for tier in value:
-                if isinstance(tier, dict):
-                    threshold = tier.get('threshold', tier.get('min', 'Unknown'))
-                    rate = tier.get('rate', tier.get('commission', 'Unknown'))
-                    lines.append(f"- {threshold}: {rate}%")
-            lines.append("")  # Add blank line after bullet list
-        else:
-            if field == 'effective_dates' and isinstance(value, dict):
-                start = value.get('start', 'Not set')
-                end = value.get('end', 'Not set')
-                value = f"{start} to {end}"
-            elif isinstance(value, list):
-                value = ', '.join(str(v) for v in value) if value else 'Not specified'
-            elif not value:
-                value = 'Not specified'
-            lines.append(f"**{label}:** {value}")
-            lines.append("")  # Always blank line after each field
-
-    # Only append submit line ONCE
-    lines.append("✅ Ready to submit!\nType 'submit' to save this plan, or 'edit' to make changes.")
-
-    # Remove duplicate submit lines if plan_data ever accidentally included it
-    output = "\n".join(line.rstrip() for line in lines if line.strip() != "")
-    # Add a final newline to finish the markdown block cleanly
-    return output + "\n"'''
-
-
-def format_plan_summary(plan_data):
     """Format plan data into a Markdown summary for ReactMarkdown"""
     lines = []
     
@@ -1307,8 +1330,375 @@ def format_plan_summary(plan_data):
     lines.append("Type 'submit' to save this plan, or 'edit' to make changes.")
     
     # Join with newlines and return
-    return "\n".join(lines)
+    return "\n".join(lines)'''
 
+def format_plan_summary(plan_data, show_all_fields=False):
+    """
+    Format plan data into a Markdown summary for ReactMarkdown
+    
+    Args:
+        plan_data: Dictionary containing plan information
+        show_all_fields: If True, show complete API payload with all defaults
+    """
+    lines = []
+    
+    if not show_all_fields:
+        # NORMAL SUMMARY (during editing)
+        lines.append("Perfect! Here's your complete plan:")
+        lines.append("")
+        lines.append("## 📋 PLAN SUMMARY")
+        lines.append("")
+        
+        field_labels = {
+            'plan_name': '📝 Plan Name',
+            'plan_period': '📅 Period',
+            'territory': '🌍 Territory',
+            'quota': '🎯 Quota',
+            'commission_structure': '💰 Commission Structure',
+            'tiers': '📊 Commission Tiers',
+            'bonus_rules': '🎁 Bonus Rules',
+            'sales_target': '📈 Sales Target',
+            'effective_dates': '📆 Effective Dates'
+        }
+        
+        for field, label in field_labels.items():
+            value = plan_data.get(field, None)
+            
+            is_empty = (
+                value is None or 
+                value == '' or 
+                value == 'Not specified' or
+                (isinstance(value, list) and len(value) == 0) or
+                (isinstance(value, dict) and not any(value.values()))
+            )
+            
+            if is_empty:
+                continue
+            
+            if field == 'tiers':
+                if isinstance(value, list) and value:
+                    lines.append(f"**{label}:**")
+                    for tier in value:
+                        if isinstance(tier, dict):
+                            threshold = tier.get('threshold', tier.get('min', 'Unknown'))
+                            rate = tier.get('rate', tier.get('commission', 'Unknown'))
+                            rate_str = str(rate)
+                            if not rate_str.endswith('%'):
+                                rate_str = rate_str + '%'
+                            lines.append(f"- {threshold}: {rate_str}")
+                    lines.append("")
+            else:
+                if field == 'effective_dates':
+                    if isinstance(value, dict) and any(value.values()):
+                        start = value.get('start', 'Not set')
+                        end = value.get('end', 'Not set')
+                        value = f"{start} to {end}"
+                    else:
+                        value = '*Not specified*'
+                elif isinstance(value, list):
+                    value = ', '.join(str(v) for v in value) if value else '*Not specified*'
+                elif not value or value == 'Not specified':
+                    value = '*Not specified*'
+                
+                lines.append(f"**{label}:** {value}")
+                lines.append("")
+        
+        lines.append("✅ Ready to submit!")
+        lines.append("Type 'submit' to see full details and save this plan, or 'edit' to make changes.")
+    
+    else:
+        # COMPLETE API PAYLOAD SUMMARY (before final save)
+        # Build the actual payload that will be sent
+        payload = build_simple_payload_from_plan_data(plan_data)
+        
+        lines.append("⚠️ **FINAL CONFIRMATION - Complete Plan Details**")
+        lines.append("")
+        lines.append("This shows EVERYTHING that will be saved to the database:")
+        lines.append("")
+        
+        # Top-level program fields
+        lines.append("## 📋 PROGRAM DETAILS")
+        lines.append("")
+        
+        program_name = payload.get('ProgramName', '')
+        if program_name:
+            lines.append(f"**Program Name:** {program_name} *(from user input)*")
+        else:
+            lines.append(f"**Program Name:** *(not set)*")
+        lines.append("")
+        
+        org_code = payload.get('OrgCode', '')
+        if org_code:
+            lines.append(f"**Organization Code:** {org_code} *(from your login)*")
+        else:
+            lines.append(f"**Organization Code:** *(not set)*")
+        lines.append("")
+        
+        lines.append(f"**Program ID:** {payload.get('id', 0)} *(will be auto-assigned)*")
+        lines.append("")
+        
+        client_id = payload.get('client_id', '')
+        if client_id:
+            lines.append(f"**Client ID:** {client_id} *(from organization)*")
+        else:
+            lines.append(f"**Client ID:** *(not set)*")
+        lines.append("")
+        
+        org_id = payload.get('org_id', '')
+        if org_id:
+            lines.append(f"**Organization ID:** {org_id} *(from your login)*")
+        else:
+            lines.append(f"**Organization ID:** *(not set)*")
+        lines.append("")
+        
+        # Dates
+        lines.append("## 📅 VALIDITY PERIOD")
+        lines.append("")
+        
+        valid_from = payload.get('ValidFrom', '')
+        valid_to = payload.get('ValidTo', '')
+        
+        if valid_from:
+            lines.append(f"**Valid From:** {valid_from} *(from user input)*")
+        else:
+            lines.append(f"**Valid From:** *(not set)*")
+        lines.append("")
+        
+        if valid_to:
+            lines.append(f"**Valid To:** {valid_to} *(from user input)*")
+        else:
+            lines.append(f"**Valid To:** *(not set)*")
+        lines.append("")
+        
+        # Schedules
+        lines.append("## 🕐 SCHEDULES")
+        lines.append("")
+        
+        payment_schedule = payload.get('PaymentSchedule', '')
+        payment_label = payload.get('PaymentScheduleLabel', '')
+        lines.append(f"**Payment Schedule:** {payment_schedule} - {payment_label} *(default)*")
+        lines.append("")
+        
+        calc_schedule = payload.get('CalculationSchedule', '')
+        calc_label = payload.get('CalculationScheduleLabel', '')
+        lines.append(f"**Calculation Schedule:** {calc_schedule} - {calc_label} *(default)*")
+        lines.append("")
+        
+        # Assignment
+        lines.append("## 👤 ASSIGNMENT")
+        lines.append("")
+        
+        assignee_name = payload.get('AssigneeName', '')
+        if assignee_name:
+            lines.append(f"**Assignee Name:** {assignee_name} *(from user input or default)*")
+        else:
+            lines.append(f"**Assignee Name:** *(not set)*")
+        lines.append("")
+        
+        lines.append(f"**Assignee ID:** {payload.get('AssigneeId', '')} *(default)*")
+        lines.append("")
+        
+        lines.append(f"**Object Type:** {payload.get('ObjectType', '')} *(default)*")
+        lines.append("")
+        
+        lines.append(f"**Table Name:** {payload.get('TableName', '')} *(default)*")
+        lines.append("")
+        
+        lines.append(f"**Table ID:** {payload.get('TableId', '')} *(default)*")
+        lines.append("")
+        
+        # Review status
+        lines.append("## 📝 REVIEW STATUS")
+        lines.append("")
+        
+        reviewed_by = payload.get('ReviewedBy', '')
+        if reviewed_by:
+            lines.append(f"**Reviewed By:** {reviewed_by}")
+        else:
+            lines.append(f"**Reviewed By:** *(empty - not yet reviewed)*")
+        lines.append("")
+        
+        review_status = payload.get('ReviewStatus', '')
+        if review_status:
+            lines.append(f"**Review Status:** {review_status}")
+        else:
+            lines.append(f"**Review Status:** *(empty - pending)*")
+        lines.append("")
+        
+        # Plan conditions
+        plan_conditions = payload.get('PlanConditionsDto', [])
+        if plan_conditions:
+            lines.append("## 📐 PLAN RULES & CONDITIONS")
+            lines.append("")
+            
+            for idx, condition in enumerate(plan_conditions, 1):
+                if len(plan_conditions) > 1:
+                    lines.append(f"### Rule #{idx}")
+                    lines.append("")
+                
+                lines.append(f"**Plan Type:** {condition.get('PlanType', '')} *(default)*")
+                lines.append("")
+                
+                lines.append(f"**Plan Type Master ID:** {condition.get('PlanTypeMasterId', '')} *(default)*")
+                lines.append("")
+                
+                lines.append(f"**Sequence:** {condition.get('Sequence', '')} *(default)*")
+                lines.append("")
+                
+                lines.append(f"**Step:** {condition.get('Step', '')} *(default)*")
+                lines.append("")
+                
+                plan_desc = condition.get('PlanDescription', '')
+                if plan_desc:
+                    lines.append(f"**Plan Description:** {plan_desc}")
+                else:
+                    lines.append(f"**Plan Description:** *(not set)*")
+                lines.append("")
+                
+                plan_params = condition.get('PlanParamsJson', '')
+                if plan_params and plan_params != "[]":
+                    lines.append(f"**Plan Parameters:** {plan_params}")
+                else:
+                    lines.append(f"**Plan Parameters:** *(empty array)*")
+                lines.append("")
+                
+                # Structure details
+                tiered = condition.get('Tiered', False)
+                lines.append(f"**Tiered:** {'Yes' if tiered else 'No'} *(from user input)*")
+                lines.append("")
+                
+                lines.append(f"**Category Type:** {condition.get('CategoryType', '')} *(from user input)*")
+                lines.append("")
+                
+                lines.append(f"**Range Type:** {condition.get('RangeType', '')} *(default)*")
+                lines.append("")
+                
+                lines.append(f"**Value Type:** {condition.get('ValueType', '')} *(default)*")
+                lines.append("")
+                
+                lines.append(f"**Plan Base:** {condition.get('PlanBase', '')} *(default)*")
+                lines.append("")
+                
+                lines.append(f"**Base Value:** {condition.get('BaseValue', '')} *(default)*")
+                lines.append("")
+                
+                show_assignment = condition.get('ShowAssignment', False)
+                lines.append(f"**Show Assignment:** {'Yes' if show_assignment else 'No'} *(default)*")
+                lines.append("")
+                
+                is_step = condition.get('isStep', False)
+                lines.append(f"**Is Step:** {'Yes' if is_step else 'No'} *(default)*")
+                lines.append("")
+                
+                abs_calc = condition.get('AbsoluteCalculation', False)
+                lines.append(f"**Absolute Calculation:** {'Yes' if abs_calc else 'No'} *(default)*")
+                lines.append("")
+                
+                # Rule validity dates
+                rule_from = condition.get('ValidFrom', '')
+                rule_to = condition.get('ValidTo', '')
+                
+                if rule_from:
+                    lines.append(f"**Rule Valid From:** {rule_from}")
+                else:
+                    lines.append(f"**Rule Valid From:** *(not set)*")
+                lines.append("")
+                
+                if rule_to:
+                    lines.append(f"**Rule Valid To:** {rule_to}")
+                else:
+                    lines.append(f"**Rule Valid To:** *(not set)*")
+                lines.append("")
+                
+                # JSON data (commission tiers)
+                json_data = condition.get('JsonData', [])
+                if json_data:
+                    lines.append("### 💰 Commission Structure")
+                    lines.append("")
+                    
+                    for data_idx, data_item in enumerate(json_data, 1):
+                        if len(json_data) > 1:
+                            lines.append(f"**Structure #{data_idx}:**")
+                            lines.append("")
+                        
+                        commission = data_item.get('commission', '')
+                        if commission:
+                            lines.append(f"**Base Commission:** {commission}%")
+                            lines.append("")
+                        else:
+                            lines.append(f"**Base Commission:** *(not set)*")
+                            lines.append("")
+                        
+                        # Commission tiers
+                        tiers = data_item.get('tiers', [])
+                        if tiers:
+                            lines.append("**Commission Tiers:**")
+                            for tier in tiers:
+                                from_val = tier.get('from_value', '')
+                                to_val = tier.get('to_value', '')
+                                comm = tier.get('commission', '')
+                                
+                                if to_val:
+                                    lines.append(f"- From {from_val} to {to_val}: {comm}%")
+                                else:
+                                    lines.append(f"- From {from_val} and above: {comm}%")
+                            lines.append("")
+                        
+                        # Currency
+                        currency = data_item.get('currency', '')
+                        if currency:
+                            lines.append(f"**Currency:** {currency} *(default - USD)*")
+                        else:
+                            lines.append(f"**Currency:** *(not set)*")
+                        lines.append("")
+                        
+                        # Plan value ranges
+                        ranges = data_item.get('PlanValueRangesDto', [])
+                        if ranges and len(ranges) > 0:
+                            range_item = ranges[0]
+                            has_ranges = any([
+                                range_item.get('BusinessPartner'),
+                                range_item.get('Product'),
+                                range_item.get('Territory'),
+                                range_item.get('Plant'),
+                                range_item.get('Group')
+                            ])
+                            
+                            if has_ranges:
+                                lines.append("**Plan Value Ranges:**")
+                                if range_item.get('BusinessPartner'):
+                                    lines.append(f"- Business Partner: {range_item.get('BusinessPartner')}")
+                                if range_item.get('Product'):
+                                    lines.append(f"- Product: {range_item.get('Product')}")
+                                if range_item.get('Territory'):
+                                    lines.append(f"- Territory: {range_item.get('Territory')}")
+                                if range_item.get('Plant'):
+                                    lines.append(f"- Plant: {range_item.get('Plant')}")
+                                if range_item.get('Group'):
+                                    lines.append(f"- Group: {range_item.get('Group')}")
+                                lines.append("")
+                            else:
+                                lines.append("**Plan Value Ranges:** *(all empty arrays)*")
+                                lines.append("")
+                
+                # Plan assignments
+                assignments = condition.get('PlanAssignments', [])
+                if assignments:
+                    lines.append("**Plan Assignments:**")
+                    lines.append(f"- {len(assignments)} assignment(s)")
+                    lines.append("")
+                else:
+                    lines.append("**Plan Assignments:** *(empty array)*")
+                    lines.append("")
+        
+        # Final instructions
+        lines.append("---")
+        lines.append("")
+        lines.append("✅ **Type 'confirm'** to save this plan with all the above settings")
+        lines.append("✏️ **Type 'edit'** to modify user-provided fields")
+        lines.append("❌ **Type 'cancel'** to discard this plan")
+    
+    return "\n".join(lines)
 
 
 # --- COMPLETELY REWRITTEN: Build payload for POST from session data ---
@@ -1344,18 +1734,38 @@ def build_simple_payload_from_plan_data(plan_data):
     # Build plan conditions with proper structure
     plan_conditions = []
     
-    # Create tiers structure
+    # Create tiers structure using actual quota
     json_data_list = []
     tiers = []
+    quota = plan_data.get('quota', 0)
     
     if plan_data.get('tiers'):
-        for tier in plan_data.get('tiers', []):
+        for idx, tier in enumerate(plan_data.get('tiers', [])):
             if isinstance(tier, dict):
-                tiers.append({
-                    "from_value": "0",
-                    "to_value": "100000",
-                    "commission": tier.get('rate', '5').replace('%', '')
-                })
+                threshold = tier.get('threshold', '').lower()
+                rate = tier.get('rate', '5').replace('%', '')
+                
+                if 'below' in threshold:
+                    # Below quota tier
+                    tiers.append({
+                        "from_value": "0",
+                        "to_value": str(quota) if quota else "100000",
+                        "commission": rate
+                    })
+                elif 'above' in threshold or 'over' in threshold:
+                    # Above quota tier
+                    tiers.append({
+                        "from_value": str(quota) if quota else "0",
+                        "to_value": "",  # Empty means "and above"
+                        "commission": rate
+                    })
+                else:
+                    # Generic tier if threshold not recognized
+                    tiers.append({
+                        "from_value": str(quota * idx) if quota else "0",
+                        "to_value": str(quota * (idx + 1)) if quota else "",
+                        "commission": rate
+                    })
     else:
         # Default tier based on commission_structure
         commission = plan_data.get('commission_structure', '8%').replace('%', '')
@@ -1365,7 +1775,7 @@ def build_simple_payload_from_plan_data(plan_data):
             "commission": commission
         })
     
-    json_data_item = {
+    '''json_data_item = {
         "commission": "",
         "tiers": tiers,
         "PlanValueRangesDto": [{
@@ -1377,16 +1787,68 @@ def build_simple_payload_from_plan_data(plan_data):
         }],
         "currency": 78  # Default USD
     }
+    json_data_list.append(json_data_item)'''
+
+    # FULL metadata stored here (no length limit in JsonData)
+    full_metadata = {
+        "plan_period": plan_data.get('plan_period', ''),
+        "quota": plan_data.get('quota', 0),
+        "sales_target": plan_data.get('sales_target', 0),
+        "bonus_rules": plan_data.get('bonus_rules', ''),
+        "commission_structure": plan_data.get('commission_structure', ''),
+        "territory": plan_data.get('territory', ''),
+        "original_tiers": plan_data.get('tiers', [])
+    }
+
+    json_data_item = {
+        "commission": "",
+        "tiers": tiers,
+        "plan_metadata": full_metadata,  # ✅ ALL plan data saved here
+        "PlanValueRangesDto": [{
+            "BusinessPartner": [],
+            "Product": [],
+            "Territory": [],
+            "Plant": [],
+            "Group": []
+        }],
+        "currency": 78
+    }
     json_data_list.append(json_data_item)
-    
+
+    # Store ALL extracted plan data as metadata
+    '''plan_metadata = {
+        "plan_period": plan_data.get('plan_period', ''),
+        "quota": plan_data.get('quota', 0),
+        "sales_target": plan_data.get('sales_target', 0),
+        "bonus_rules": plan_data.get('bonus_rules', ''),
+        "commission_structure": plan_data.get('commission_structure', ''),
+        "territory": plan_data.get('territory', ''),
+        "original_tiers": plan_data.get('tiers', [])
+    }'''
+
+    # Short summary for PlanParamsJson (VARCHAR 250 constraint)
+    short_metadata = {
+        "q": plan_data.get('quota', 0),
+        "t": plan_data.get('sales_target', 0)
+    }
+
+    period = plan_data.get('plan_period', '')
+    if period and len(period) < 20:
+        short_metadata["p"] = period[:15]
+
+    territory = plan_data.get('territory', '')
+    if territory and len(territory) < 20:
+        short_metadata["ter"] = territory[:15]
+
     # Build the rule
     rule = {
         "PlanType": "Commission",
         "PlanTypeMasterId": 1,
         "Sequence": 100,
         "Step": 0,
-        "PlanDescription": f"{plan_data.get('plan_name', 'Commission')} Plan",
-        "PlanParamsJson": "[]",  # Empty for now
+        "PlanDescription": f"{plan_data.get('plan_name', 'Commission')} Plan"[:250],
+        "PlanParamsJson": json.dumps(short_metadata),  # ✅ Short version (under 100 chars)
+        "PlanParams": json.dumps(short_metadata),      # ✅ Same short version
         "Tiered": bool(plan_data.get('tiers')),
         "CategoryType": "Tiered" if plan_data.get('tiers') else "Flat",
         "RangeType": "Amount",
@@ -1402,7 +1864,7 @@ def build_simple_payload_from_plan_data(plan_data):
         "PlanAssignments": []
     }
     plan_conditions.append(rule)
-    
+
     # Get org and client IDs
     org_id = getattr(request, "org_id", None)
     client_id = get_client_id_for_org(org_id) if org_id else None
