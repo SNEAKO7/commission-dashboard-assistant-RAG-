@@ -1,10 +1,10 @@
-
 #############################################################################################################################################
 
 
 import json
 import logging
 import re
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -97,3 +97,124 @@ def extract_plan_fields_claude(user_msg, llm_complete_func):
         return out.get("extracted", {}), out.get("missing_fields", [])
     except Exception:
         return {}, required_fields
+
+# Add to the END of intent_detection.py
+
+def is_ml_prediction_intent(user_msg: str) -> bool:
+    """
+    Detect ML/prediction requests with higher accuracy
+    """
+    msg = user_msg.lower().strip()
+    
+    # Strong prediction indicators
+    prediction_keywords = [
+        'predict', 'prediction', 'forecast', 'what if', 'estimate',
+        'calculate new', 'impact of', 'increase commission by',
+        'decrease commission by', 'reduce commission by',
+        'change commission', 'adjust commission'
+    ]
+    
+    for keyword in prediction_keywords:
+        if keyword in msg:
+            logger.info(f"🤖 [ML-PREDICTION] Detected: '{keyword}'")
+            return True
+    
+    return False
+
+
+def is_ml_optimization_intent(user_msg: str) -> bool:
+    """
+    Detect optimization/recommendation requests
+    """
+    msg = user_msg.lower().strip()
+    
+    optimization_keywords = [
+        'optimize', 'optimise', 'recommend', 'recommendation', 
+        'improve plan', 'improve my plan', 'analyze plan', 'analyse plan',
+        'best practices', 'tweak plan', 'adjust plan', 'fix plan',
+        'suggest changes', 'suggest improvements', 'make better',
+        'how to improve', 'what should i change'
+    ]
+    
+    for keyword in optimization_keywords:
+        if keyword in msg:
+            logger.info(f"🎯 [ML-OPTIMIZE] Detected: '{keyword}'")
+            return True
+    
+    return False
+
+
+def extract_ml_params(user_msg: str) -> Dict[str, Any]:
+    """
+    Extract parameters from ML requests
+    """
+    import re
+    
+    params = {
+        'type': None,
+        'percentage': None,
+        'plan_id': None,
+        'plan_name': None
+    }
+    
+    msg = user_msg.lower()
+    
+    # Determine type
+    if is_ml_prediction_intent(user_msg):
+        params['type'] = 'predict'
+    elif is_ml_optimization_intent(user_msg):
+        params['type'] = 'optimize'
+    
+# Extract percentage with better patterns
+    pct_patterns = [
+        r'(\d+\.?\d*)\s*%',                    # Match any "10%" anywhere
+        r'by\s+(\d+\.?\d*)\s*percent',
+        r'(\d+\.?\d*)\s*percent',
+        r'increase.*?by\s+(\d+\.?\d*)',
+        r'decrease.*?by\s+(\d+\.?\d*)',
+        r'reduce.*?by\s+(\d+\.?\d*)',
+        r'change.*?by\s+(\d+\.?\d*)'
+    ]
+    
+    for pattern in pct_patterns:
+        match = re.search(pattern, msg)
+        if match:
+            params['percentage'] = float(match.group(1))
+            # Determine direction
+            if any(word in msg for word in ['decrease', 'reduce', 'lower', 'cut']):
+                params['percentage'] = -abs(params['percentage'])
+            break
+    
+    # Extract plan ID
+    plan_id_patterns = [
+        r'plan\s+#?(\d+)',
+        r'plan\s+id\s+(\d+)',
+        r'commission\s+plan\s+(\d+)'
+    ]
+    
+    for pattern in plan_id_patterns:
+        match = re.search(pattern, msg)
+        if match:
+            params['plan_id'] = int(match.group(1))
+            break
+    
+    # Extract plan name (quoted or after "called"/"named")
+    name_patterns = [
+        r'"([^"]+)"',
+        r'\'([^\']+)\'',
+        r'called\s+([A-Za-z0-9_\s]+)',
+        r'named\s+([A-Za-z0-9_\s]+)',
+        r'plan\s+([A-Za-z][A-Za-z0-9_\s]+)'
+    ]
+    
+    for pattern in name_patterns:
+        match = re.search(pattern, user_msg)  # Use original case
+        if match:
+            potential_name = match.group(1).strip()
+            # Validate it's not too long and not a common phrase
+            if 3 < len(potential_name) < 50 and potential_name.lower() not in ['the', 'my', 'our', 'this', 'that']:
+                params['plan_name'] = potential_name
+                break
+    
+    logger.info(f"[ML-PARAMS] Extracted: {params}")
+    return params
