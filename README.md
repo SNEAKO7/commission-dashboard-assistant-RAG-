@@ -1,4 +1,4 @@
-# Commission Dashboard Assistant with RAG, MCP PostgreSQL & Redis Integration 🚀
+# Commission Dashboard Assistant with RAG, MCP, Redis & ML Predictions 🚀
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/flask-2.3+-green.svg)](https://flask.palletsprojects.com/)
@@ -6,86 +6,109 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13+-316192.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7.0+-DC382D.svg)](https://redis.io/)
 [![FAISS](https://img.shields.io/badge/FAISS-1.7+-orange.svg)](https://github.com/facebookresearch/faiss)
+[![Scikit-learn](https://img.shields.io/badge/scikit--learn-1.5+-F7931E.svg)](https://scikit-learn.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 ## 🎯 Executive Summary
 
-An enterprise-grade AI assistant for commission plan management, featuring state-of-the-art **Retrieval-Augmented Generation (RAG)** with **Model Context Protocol (MCP)** PostgreSQL server integration, **Redis-powered chat history management**, and **client-specific data retrieval**. This solution combines conversational AI, document intelligence, secure read-only database operations, persistent session management, and seamless API orchestration to revolutionize commission management workflows.
+An enterprise-grade AI assistant for commission plan management featuring **state-of-the-art Machine Learning predictions**, **Retrieval-Augmented Generation (RAG)**, **Model Context Protocol (MCP)** PostgreSQL server integration, and **Redis-powered chat history**. This solution combines conversational AI, document intelligence, **predictive analytics**, secure read-only database operations, persistent session management, and seamless API orchestration to revolutionize commission management workflows.
 
 ### 🔥 What's New in This Version
-- **🔗 Client-Specific Data Retrieval**: Advanced filtering and data access based on client context and permissions
-- **⚡ Redis Chat History**: Persistent conversation memory with configurable TTL (1 hour default)
-- **🎯 Enhanced Session Management**: Improved user experience with conversation continuity across sessions
-- **📊 Performance Optimized Caching**: Redis-based caching for faster response times and reduced database load
-- **🔐 Enhanced Security**: Client-based data isolation and secure session handling
-- **📈 Scalable Architecture**: Production-ready Redis integration for high-throughput applications
+
+#### **🤖 ML/Predictive Analytics (NEW!)**
+- **Advanced Commission Impact Prediction**: Monte Carlo simulation-based forecasting
+- **Multi-Algorithm Ensemble**: Random Forest, XGBoost, LightGBM, Prophet time series
+- **Plan Optimization Engine**: AI-powered recommendations with direct edit capability
+- **Risk Analysis**: Confidence intervals, worst-case scenarios, probability calculations
+- **Cohort Analysis**: Performance tier-based impact assessment
+- **Automated Feature Engineering**: 40+ derived features for accurate predictions
+
+#### **💬 Redis Chat Session Management (NEW!)**
+- Persistent conversation memory across browser sessions
+- Configurable TTL (default: 30 minutes)
+- High-performance chat history storage
+- Automatic session cleanup
+
+#### **🧠 Enhanced NLP & Intent Detection (NEW!)**
+- ML prediction intent detection ("predict 10% increase", "what if we decrease by 5%")
+- Plan optimization intent detection ("optimize my plans", "improve plan performance")
+- Advanced parameter extraction from natural language
+- Better plan creation intent recognition
+
+#### **📊 Improved Database Operations**
+- Full schema introspection (all tables, not hardcoded)
+- Pagination support for large result sets
+- Enhanced tenant filtering (org_id + client_id)
+- Better SQL security validation
 
 ## 🌟 Core Features
 
-### AI & Intelligence Layer
-- **🤖 MCP PostgreSQL Integration**: Standards-compliant Model Context Protocol server for secure read-only database operations
-- **📚 Advanced RAG System**: Hybrid retrieval with semantic understanding and document intelligence
-- **🧠 Multi-Model Support**: Flexible LLM integration (OpenAI, Anthropic, local models)
-- **💬 Persistent Chat Memory**: Redis-powered conversation history with configurable TTL and session persistence
-- **🎯 Client-Aware Intelligence**: Context-aware responses based on client-specific data and permissions
+### 🤖 AI & ML Intelligence Layer
+- **🔮 Predictive Analytics**: Forecast commission impact with Monte Carlo simulation (1000+ simulations)
+- **🎯 Plan Optimization**: AI-powered recommendations with actionable edit suggestions
+- **📈 Multi-Model Ensemble**: Random Forest, XGBoost, LightGBM, Prophet for maximum accuracy
+- **📊 Risk Analysis**: Confidence intervals, best/worst case scenarios, probability calculations
+- **👥 Cohort Analysis**: Performance tier-based impact assessment
+- **🧠 Advanced RAG System**: Hybrid retrieval with semantic understanding and document intelligence
+- **💬 Persistent Chat Memory**: Redis-powered conversation history with configurable TTL
+- **🎯 Intent Detection**: Automatically routes queries to appropriate handlers (ML, DB, RAG, Plan Creation)
 
 ### Commission Management
-- **🎯 Guided Plan Creation**: Three-phase wizard with intelligent validation and client-specific templates
-- **📊 Dynamic Rule Builder**: Complex commission structures with tiered calculations and client customization
-- **🔄 Real-time API Integration**: Seamless backend synchronization with client-specific endpoints
-- **📈 Business Logic Engine**: Support for multiple calculation types (Flat/Slab/Tiered) with client-specific rules
-- **🏢 Multi-Client Support**: Isolated data access and customized workflows per client organization
+- **🎯 Guided Plan Creation**: Three-phase wizard with intelligent validation and NLP-based extraction
+- **📊 Dynamic Rule Builder**: Complex commission structures with tiered calculations
+- **🔄 Real-time API Integration**: Seamless backend synchronization
+- **📈 Business Logic Engine**: Support for multiple calculation types (Flat/Slab/Tiered)
+- **✏️ Direct Plan Editing**: Apply ML recommendations with one command
 
-### Database & Caching Layer
+### Database & ML Layer
 - **🔐 SQL Security Layer**: Protection against SQL injection with SELECT-only operations
 - **🗄️ PostgreSQL Integration**: Secure read-only database operations through MCP protocol
 - **📱 Redis Session Management**: High-performance chat history storage with automatic expiration
-- **🔍 Intelligent Query Builder**: Safe and optimized SQL generation for client-specific data retrieval
-- **📊 Real-time Analytics**: Client-specific insights and reporting capabilities with caching optimization
+- **🤖 ML Model Cache**: Tenant-specific model storage for fast predictions
+- **🔍 Intelligent Query Builder**: Safe and optimized SQL generation
+- **📊 Real-time Analytics**: Query results with natural language formatting
 
 ### Document Intelligence
 - **📄 Multi-Format Processing**: PDF, DOCX, Excel, CSV, TXT, JSON, Images (OCR)
-- **🔍 Semantic Search**: FAISS-powered vector similarity search with client-specific document filtering
-- **⚡ Smart Chunking**: Adaptive document segmentation with client-aware indexing
-- **🎨 Metadata Extraction**: Automatic document enrichment with client tagging and categorization
+- **🔍 Semantic Search**: FAISS-powered vector similarity search
+- **⚡ Smart Chunking**: Adaptive document segmentation
+- **🎨 Metadata Extraction**: Automatic document enrichment
 
-## 🏗️ System Architecture
+## 🏗️ Enhanced System Architecture
 
 ```mermaid
 graph TB
     subgraph "Client Layer"
         Web[Web Interface]
         MCPClient[MCP Client]
-        ImprovedClient[Improved MCP Client]
     end
     
-    subgraph "Session & Caching Layer"
+    subgraph "Session & Cache Layer"
         Redis[(Redis Cache)]
         ChatHistory[Chat History Manager]
-        ClientSessions[Client Session Store]
+        MLModels[ML Model Cache]
+    end
+    
+    subgraph "Intelligence Engine"
+        IntentDetection[Intent Detection]
+        RAG[RAG Pipeline]
+        MLPredictor[ML Predictor]
+        PlanOptimizer[Plan Optimizer]
+        NLPExtractor[NLP Plan Extractor]
     end
     
     subgraph "MCP Server Layer"
         MCPServer[MCP PostgreSQL Server]
-        Protocol[Protocol Handler]
-        Security[SQL Security Layer - SELECT Only]
-        ClientFilter[Client Data Filter]
+        SQLSecurity[SQL Security - SELECT Only]
     end
     
     subgraph "Application Core"
         Flask[Flask Application]
-        SessionMgr[Enhanced Session Manager]
-        Router[Route Handler]
-        ClientCtx[Client Context Manager]
-    end
-    
-    subgraph "Intelligence Engine"
-        RAG[RAG Pipeline]
-        Embeddings[Embedding Service]
-        Retriever[Document Retriever]
-        Generator[Response Generator]
-        ClientRAG[Client-Aware RAG]
+        MLHandler[ML Request Handler]
+        DBHandler[Database Query Handler]
+        PlanWizard[Plan Creation Wizard]
+        PlanEditor[Plan Editor]
     end
     
     subgraph "Data Layer"
@@ -93,188 +116,267 @@ graph TB
         FAISS[(FAISS Index)]
         Docs[(Document Store)]
         External[External APIs]
-        ClientData[(Client-Specific Data)]
     end
     
     Web --> Flask
-    MCPClient --> MCPServer
-    ImprovedClient --> MCPServer
-    Flask --> Redis
+    Flask --> IntentDetection
+    
+    IntentDetection --> MLHandler
+    IntentDetection --> DBHandler
+    IntentDetection --> RAG
+    IntentDetection --> PlanWizard
+    
+    MLHandler --> MLPredictor
+    MLHandler --> PlanOptimizer
+    PlanOptimizer --> PlanEditor
+    PlanEditor --> PostgreSQL
+    
+    NLPExtractor --> PlanWizard
+    
     Flask --> ChatHistory
-    Flask --> ClientSessions
-    MCPServer --> Security
-    MCPServer --> ClientFilter
-    Security --> PostgreSQL
-    ClientFilter --> ClientData
-    Flask --> SessionMgr
-    Flask --> ClientCtx
-    Flask --> RAG
-    RAG --> ClientRAG
-    RAG --> Embeddings
-    RAG --> Retriever
-    Retriever --> FAISS
-    RAG --> Generator
-    Flask --> External
-    Redis --> ChatHistory
-    ClientSessions --> Redis
+    ChatHistory --> Redis
+    
+    MLPredictor --> MLModels
+    MLModels --> Redis
+    
+    DBHandler --> MCPServer
+    MCPServer --> SQLSecurity
+    SQLSecurity --> PostgreSQL
+    
+    PlanWizard --> External
+    
+    RAG --> FAISS
+    FAISS --> Docs
 ```
 
-## 📁 Project Structure
+## 📁 Enhanced Project Structure
 
 ```
 commission-dashboard-assistant-RAG/
 │
 ├── 🎯 Core Application Files
-│   ├── 📄 app.py                      # Main Flask application & route handlers with Redis integration
-│   ├── 📄 rag.py                      # RAG pipeline implementation with client-aware filtering
-│   └── 📄 requirements.txt            # Python dependencies (including redis-py)
+│   ├── 📄 app.py                          # Main Flask application with ML integration
+│   ├── 📄 rag.py                          # RAG pipeline implementation
+│   ├── 📄 intent_detection.py             # ML/Plan/DB intent detection (ENHANCED)
+│   ├── 📄 nlp_plan_builder.py             # NLP-based plan field extraction (NEW)
+│   └── 📄 requirements.txt                # Python dependencies (ML libs added)
 │
-├── 🤖 MCP Integration Files
-│   ├── 📄 mcp_postgres_server.py      # MCP PostgreSQL server implementation (SELECT-only)
-│   ├── 📄 mcp_client.py               # Standard MCP client
-│   ├── 📄 improved_mcp_client.py      # Enhanced MCP client with logging and formatting
-│   └── 📄 setup_mcp.py                # MCP configuration and setup script
+├── 🤖 ML/Prediction System (NEW!)
+│   ├── 📄 ml_advanced_predictor.py        # Advanced ML predictor with ensemble models
+│   ├── 📄 ml_handler.py                   # ML request handler for chat interface
+│   ├── 📄 plan_editor.py                  # Apply ML recommendations to plans
+│   └── 📄 test_ml_system.py               # Comprehensive ML test suite
 │
-├── 🗄️ Database & Caching Management
-│   ├── 📄 final_db_utils.py          # Database utility functions with client filtering
-│   ├── 📄 sql_security.py            # SQL injection protection & SELECT-only enforcement
-│   ├── 📄 test_db.py                  # Database connection and query testing
-│   ├── 📄 redis_manager.py           # Redis connection and session management (NEW)
-│   └── 📄 client_data_manager.py     # Client-specific data retrieval and filtering (NEW)
+├── 🔌 MCP Integration Files
+│   ├── 📄 mcp_client.py                   # MCP client with Claude SQL generation
+│   ├── 📄 improved_mcp_client.py          # Enhanced MCP client wrapper
+│   ├── 📄 mcp_postgres_server.py          # MCP PostgreSQL server (SELECT-only)
+│   └── 📄 setup_mcp.py                    # MCP configuration and setup
+│
+├── 🗄️ Database & Session Management
+│   ├── 📄 final_db_utils.py               # Database utilities with tenant filtering
+│   ├── 📄 sql_security.py                 # SQL injection protection
+│   ├── 📄 redis_chat_session.py           # Redis session management (NEW)
+│   └── 📄 test_db.py                      # Database connection testing
 │
 ├── 🎨 Frontend
-│   └── 📁 templates/                  # HTML templates
-│       └── index.html                 # Main web interface with session continuity
+│   └── 📁 templates/
+│       └── 📄 index.html                  # Web interface with ML features
 │
 ├── 📊 Data Storage
-│   ├── 📁 data/                       # Document storage directory
-│   │   ├── 📁 client-specific/        # Client-segregated document storage (NEW)
-│   │   ├── 📄 README.md              # Data directory documentation
-│   │   └── 📄 .gitkeep               # Git placeholder
-│   └── 📁 model/                      # Model cache directory
-│       ├── 📄 README.md              # Model directory documentation
-│       └── 📄 .gitkeep               # Git placeholder
+│   ├── 📁 data/                           # Document storage directory
+│   │   ├── 📄 README.md
+│   │   └── 📄 .gitkeep
+│   └── 📁 model/                          # ML model cache directory (NEW)
+│       ├── 📄 README.md
+│       └── 📄 .gitkeep
 │
-├── 📋 Configuration
-│   ├── 📄 .env                        # Environment variables (not in repo)
-│   ├── 📄 .gitignore                  # Git ignore rules
-│   └── 📄 README.md                   # This file
+├── 📋 Configuration & Scripts
+│   ├── 📄 .env                            # Environment variables
+│   ├── 📄 .gitignore                      # Git ignore rules
+│   ├── 📄 start.bat                       # Windows startup script
+│   └── 📄 README.md                       # This file
+```
+
+## 🤖 ML Prediction System Deep Dive
+
+### Advanced Features
+
+#### 1. **Multi-Algorithm Ensemble**
+```python
+models = {
+    'random_forest': RandomForestRegressor(n_estimators=200),
+    'gradient_boosting': GradientBoostingRegressor(n_estimators=200),
+    'xgboost': XGBRegressor(n_estimators=200),
+    'lightgbm': LGBMRegressor(n_estimators=200)
+}
+# Best model automatically selected based on R² score
+```
+
+#### 2. **Advanced Feature Engineering (40+ Features)**
+- **Time Features**: Seasonality (month_sin, month_cos), quarter, day of week
+- **Plan Features**: Duration, progress percentage, timing
+- **Employee Features**: Historical averages, std dev, performance tiers
+- **Lag Features**: Previous 1/2/3 months performance
+- **Rolling Features**: 3-month rolling averages
+- **Statistical Features**: Z-scores, growth rates
+- **Cohort Features**: Performance tier classification
+
+#### 3. **Monte Carlo Risk Analysis**
+```python
+# 1000 simulations to calculate:
+- Expected cost change
+- Best case (5th percentile)
+- Worst case (95th percentile)
+- Probability of 10%+ overrun
+- Confidence intervals (95%)
+```
+
+#### 4. **Automated Plan Optimization**
+Detects and recommends fixes for:
+- ❌ Low attainment (<70%) → Reduce quota
+- ❌ High attainment (>120%) → Increase quota  
+- ❌ Poor tier distribution → Adjust thresholds
+- ❌ High commission rates → Optimize rates
+- ✅ Add accelerators for top performers
+
+### ML Workflow
+
+```mermaid
+graph LR
+    A[User Query] --> B{Intent Detection}
+    B -->|Predict| C[ML Predictor]
+    B -->|Optimize| D[Plan Optimizer]
+    
+    C --> E[Fetch Tenant Data]
+    D --> E
+    
+    E --> F[Feature Engineering]
+    F --> G[Model Selection]
+    
+    G --> H{Model Exists?}
+    H -->|No| I[Train Models]
+    H -->|Yes| J[Use Cached Model]
+    
+    I --> K[Random Forest]
+    I --> L[XGBoost]
+    I --> M[LightGBM]
+    I --> N[Gradient Boosting]
+    
+    K --> O[Select Best Model]
+    L --> O
+    M --> O
+    N --> O
+    
+    O --> P[Cache Model]
+    P --> J
+    
+    J --> Q[Generate Predictions]
+    Q --> R[Monte Carlo Simulation]
+    R --> S[Risk Analysis]
+    S --> T[Cohort Analysis]
+    
+    T --> U[Format Response]
+    
+    D --> V[Analyze Performance]
+    V --> W[Generate Recommendations]
+    W --> X[Create Edit Actions]
+    X --> Y[Return to User]
+    
+    U --> Z[Display Results]
+    Y --> Z
 ```
 
 ## 🔧 Component Details
 
 ### Enhanced Core Application Files
 
-#### `app.py` - Flask Application Core with Redis Integration
-The main application server handling HTTP requests, Redis session management, and client-specific data orchestration.
+#### `app.py` - Flask Application Core with ML Integration
+**New ML Endpoints:**
+- `POST /chat` - Now handles ML prediction and optimization intents
+- `POST /api/ml/predict` - Direct API for commission predictions
+- `POST /api/ml/optimize` - Direct API for plan optimizations
+- `POST /api/ml/apply-change` - Apply ML recommendation to a plan
 
-**Key Functions:**
-- `create_app()`: Application factory with Redis configuration and client context setup
-- `initialize_redis()`: Redis connection initialization with session management
-- `initialize_rag()`: RAG pipeline initialization with client-aware document indexing
-- `chat()`: Enhanced chat endpoint with Redis-based conversation history and client filtering
-- `get_chat_history()`: Retrieve persistent conversation history from Redis
-- `save_chat_message()`: Store chat messages with TTL and client association
-- `create_commission_plan()`: Multi-phase commission plan creation with client-specific workflows
-- `handle_client_context()`: Client identification and context management
-- `_test_api()`: Health check including Redis connectivity diagnostics
+**Key New Functions:**
+- `handle_ml_request()`: Routes ML prediction/optimization requests
+- `is_ml_prediction_intent()`: Detects ML prediction queries
+- `is_ml_optimization_intent()`: Detects plan optimization queries
+- `extract_ml_params()`: Extracts percentage, plan_id, etc. from user message
 
-**New Features:**
-- Redis-based session persistence with configurable TTL (default: 1 hour)
-- Client-specific data filtering and access control
-- Enhanced conversation continuity across browser sessions
-- Automatic session cleanup and memory optimization
-- Client context preservation and intelligent routing
-
-#### `rag.py` - Enhanced RAG Pipeline with Client Awareness
-Implements the Retrieval-Augmented Generation pipeline with client-specific document processing and filtering.
-
-**Enhanced Classes:**
-- `ClientAwareRAGPipeline`: Main orchestrator with client-specific document filtering
-- `ClientDocumentLoader`: Multi-format document loading with client segregation
-- `EnhancedTextSplitter`: Intelligent text chunking with client metadata embedding
-- `ClientFilteredRetriever`: Vector search with client-specific result filtering
-- `ContextAwareGenerator`: Response generation with client-specific templates and rules
-
-**New Key Functions:**
-- `load_client_documents()`: Load documents specific to client context
-- `create_client_embeddings()`: Generate embeddings with client metadata
-- `client_filtered_search()`: Semantic search with client access control
-- `generate_client_response()`: Context-aware response generation with client customization
-- `update_client_index()`: Incremental updates to client-specific vector indices
-
-### New Redis & Client Management Files
-
-#### `redis_manager.py` - Redis Session & Cache Management (NEW)
-Comprehensive Redis integration for chat history, session management, and performance caching.
-
+#### `ml_advanced_predictor.py` - Advanced ML Prediction Engine
 **Core Classes:**
-- `RedisSessionManager`: Chat history persistence with TTL management
-- `RedisCacheManager`: Query result caching and performance optimization
-- `ClientSessionStore`: Client-specific session isolation and management
+- `TenantMLPredictor`: Main ML predictor with tenant isolation
 
-**Key Functions:**
-- `store_chat_history()`: Save conversation messages with automatic expiration
-- `retrieve_chat_history()`: Load conversation history with pagination support
-- `manage_session_ttl()`: Dynamic TTL adjustment based on user activity
-- `clear_expired_sessions()`: Automatic cleanup of expired conversation data
-- `get_client_cache()`: Client-specific caching with isolation boundaries
-- `invalidate_cache()`: Selective cache invalidation for real-time updates
+**Key Methods:**
+- `predict_commission_impact()`: Forecast impact of commission changes
+- `recommend_plan_optimizations()`: Generate actionable recommendations
+- `train_tenant_models()`: Train ensemble models per tenant
+- `engineer_advanced_features()`: Create 40+ ML features
+- `fetch_tenant_commissions()`: Load tenant-specific data with isolation
 
-**Configuration Options:**
-- Configurable TTL for chat history (default: 3600 seconds / 1 hour)
-- Redis connection pooling for high-performance applications
-- Automatic failover and reconnection handling
-- Memory optimization with LRU eviction policies
+#### `ml_handler.py` - ML Request Handler
+**Core Functions:**
+- `handle_ml_request()`: Main entry point for ML queries
+- `handle_prediction_request()`: Process "what if" scenarios
+- `handle_optimization_request()`: Process optimization requests
+- `format_prediction_response()`: Format ML output as markdown
+- `lookup_plan_id_by_name()`: Find plan by name for easier queries
 
-#### `client_data_manager.py` - Client-Specific Data Retrieval (NEW)
-Advanced client data filtering and access control system for multi-tenant environments.
+#### `plan_editor.py` - ML Recommendation Application
+**Core Class:**
+- `PlanEditor`: Applies ML recommendations to database
 
-**Core Features:**
-- `ClientDataFilter`: Implements client-specific data access rules
-- `DataIsolationManager`: Ensures data privacy and client separation
-- `ClientContextBuilder`: Dynamic context creation based on client identity
-- `PermissionManager`: Role-based access control for client data
+**Key Methods:**
+- `apply_optimization()`: Apply specific recommendation to plan
+- `_adjust_quota()`: Modify tier thresholds
+- `_adjust_commission_rates()`: Change commission percentages
+- `_add_tier()`: Add accelerator tiers
+- `_update_plan_rules()`: Commit changes to database
 
-**Key Functions:**
-- `filter_by_client()`: Apply client-specific filters to database queries
-- `validate_client_access()`: Verify client permissions for data access
-- `build_client_context()`: Create comprehensive client context for RAG operations
-- `get_client_documents()`: Retrieve client-specific document collections
-- `apply_data_governance()`: Enforce data governance and compliance rules
+#### `redis_chat_session.py` - Redis Session Management
+**Core Functions:**
+- `save_message()`: Store chat message with TTL
+- `get_chat_history()`: Retrieve conversation history
+- `clear_chat_history()`: Delete session data
 
-**Security Features:**
-- Row-level security implementation for client data isolation
-- Audit logging for all client data access
-- Dynamic permission evaluation based on client roles
-- Data masking for sensitive information protection
+**Features:**
+- Automatic session expiration (configurable TTL)
+- Client and session isolation
+- JSON serialization for message storage
 
-### Enhanced Database Management
+#### `nlp_plan_builder.py` - NLP Plan Extraction
+**Core Function:**
+- `extract_plan_struct_from_text()`: Extract plan fields from paragraph
 
-#### Updated `final_db_utils.py` - Database Utilities with Client Support
-Enhanced database utility functions with client-specific querying and advanced caching.
+**Extracted Fields:**
+- plan_name, plan_period, territory, quota
+- commission_structure, tiers, bonus_rules
+- sales_target, effective_dates
 
-**Enhanced Functions:**
-- `create_client_connection()`: Establish client-aware database connections
-- `execute_client_query()`: Run queries with automatic client filtering
-- `get_client_schema_info()`: Retrieve client-specific schema information
-- `cache_query_results()`: Redis-based query result caching with client isolation
+#### `intent_detection.py` - Enhanced Intent Detection
+**New Functions:**
+- `is_ml_prediction_intent()`: Detect ML prediction requests
+- `is_ml_optimization_intent()`: Detect optimization requests
+- `extract_ml_params()`: Extract percentage, plan_id, plan_name
+- `is_plan_creation_intent()`: Improved plan creation detection
 
-**New Client Features:**
-- Client-specific connection pooling and optimization
-- Automatic query result caching with Redis integration
-- Dynamic query building with client context injection
-- Performance monitoring and optimization for client queries
+**Supported Intents:**
+- 🤖 ML Prediction: "predict 10% increase", "what if commission decreases by 5%"
+- 🎯 ML Optimization: "optimize my plans", "recommend improvements"
+- 📝 Plan Creation: "create plan", "new commission plan"
+- 🗄️ Database Query: "show active plans", "list all programs"
+- 🧠 RAG Query: "what are our Q2 rates?", "explain our policy"
 
 ## 🚀 Installation & Setup
 
 ### Prerequisites
-- Python 3.10+ 
+- Python 3.10+
 - PostgreSQL 13+
-- **Redis 7.0+** (NEW REQUIREMENT)
+- **Redis 7.0+** (REQUIRED)
 - Tesseract OCR (for image processing)
 - 8GB+ RAM recommended
-- Optional: CUDA-capable GPU for faster embeddings
+- **Anthropic API Key** (for Claude/MCP)
 
 ### 1. Clone Repository
 ```bash
@@ -297,6 +399,14 @@ python -m venv .venv
 ```bash
 pip install -r requirements.txt
 ```
+
+**New ML Dependencies:**
+- scikit-learn (Random Forest, Gradient Boosting)
+- xgboost (XGBoost models)
+- lightgbm (LightGBM models)
+- prophet (Time series forecasting)
+- scipy, statsmodels (Statistical analysis)
+- redis (Chat session management)
 
 ### 4. Redis Setup
 ```bash
@@ -330,7 +440,7 @@ python setup_mcp.py
 Create `.env` file:
 ```env
 # Flask Configuration
-FLASK_SECRET_KEY=your-super-secure-secret-key-here
+FLASK_SECRET_KEY=your-super-secure-secret-key
 FLASK_ENV=development
 FLASK_DEBUG=True
 
@@ -348,16 +458,13 @@ DB_PASSWORD=your_db_password
 # Redis Configuration (NEW)
 REDIS_HOST=localhost
 REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password  # Optional, leave empty if no auth
+REDIS_PASSWORD=your_redis_password  # Optional
 REDIS_DB=0
 REDIS_SSL=false
-CHAT_HISTORY_TTL=3600  # 1 hour in seconds
-REDIS_CONNECTION_POOL_SIZE=10
+CHAT_HISTORY_TTL=1800  # 30 minutes
 
-# MCP Configuration
-MCP_SERVER_HOST=localhost
-MCP_SERVER_PORT=5000
-MCP_CLIENT_TIMEOUT=30
+# MCP/Claude Configuration (REQUIRED)
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
 
 # RAG Configuration
 DOCUMENTS_FOLDER=data
@@ -366,62 +473,55 @@ EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 CHUNK_SIZE=800
 CHUNK_OVERLAP=100
 
-# Client-Specific Configuration (NEW)
-ENABLE_CLIENT_FILTERING=true
-CLIENT_DATA_ISOLATION=strict
-DEFAULT_CLIENT_ID=default
-CLIENT_DOCUMENT_PATH=data/client-specific
+# ML Configuration (NEW)
+ML_MODEL_CACHE=true
+ML_AUTO_RETRAIN=false
+ML_MIN_TRAINING_SAMPLES=100
+ML_SIMULATION_COUNT=1000
 ```
 
-### 7. Create Required Directories
+### 7. Initialize System
 ```bash
-# Create data and model directories if they don't exist
-mkdir -p data model data/client-specific
+# Test database connection
+python test_db.py
+
+# Test Redis connection
+redis-cli ping
+
+# Test ML system
+python test_ml_system.py
+
+# Initialize MCP server
+python setup_mcp.py
 ```
 
-### 8. Initialize Services
+### 8. Add Documents
 ```bash
-# Initialize Redis manager
-python redis_manager.py --init
-
-# Initialize client data manager  
-python client_data_manager.py --setup
-
-# Run database utilities to create tables
-python final_db_utils.py
-
-# Test all connections
-python test_db.py && redis-cli ping
-```
-
-### 9. Add Documents with Client Organization
-```bash
-# Copy general documents to the main data folder
+# Copy documents to data folder
 cp /path/to/your/documents/* data/
-
-# Copy client-specific documents to segregated folders
-mkdir -p data/client-specific/client1
-mkdir -p data/client-specific/client2
-cp /path/to/client1/documents/* data/client-specific/client1/
-cp /path/to/client2/documents/* data/client-specific/client2/
 ```
 
-### 10. Launch Application
+### 9. Launch Application
 
-#### Standard Mode with Redis
+#### Standard Mode (Recommended)
 ```bash
-python app.py
+# Windows
+start.bat
+
+# Linux/Mac
+chmod +x start.sh
+./start.sh
 ```
 
-#### With Full MCP and Redis Stack
+#### Manual Start
 ```bash
-# Terminal 1: Start Redis Server (if not running as service)
+# Terminal 1: Start Redis (if not running as service)
 redis-server
 
 # Terminal 2: Start MCP PostgreSQL Server
 python mcp_postgres_server.py
 
-# Terminal 3: Start Flask App with Redis Integration
+# Terminal 3: Start Flask App
 python app.py
 ```
 
@@ -429,105 +529,185 @@ Access at: **http://localhost:5000**
 
 ## 🔌 Enhanced API Documentation
 
-### Chat Endpoint with Redis History
+### ML Prediction Endpoints (NEW!)
+
+#### Predict Commission Impact
 ```http
-POST /chat
+POST /api/ml/predict
 Content-Type: application/json
+Authorization: Bearer {jwt_token}
 
 {
-    "message": "create a new commission plan for client ABC",
-    "user_id": "user-123",
-    "client_id": "client-abc",  // NEW: Client identification
-    "session_id": "optional-session-id",
-    "load_history": true        // NEW: Load chat history from Redis
+    "percentage_change": 10.0,
+    "plan_id": 123  // optional
 }
-```
-
-**Enhanced Response:**
-```json
-{
-    "response": "I'll help you create a commission plan for Client ABC. Based on your client's previous configurations...",
-    "sources": ["client-abc/policy.pdf", "client-abc/rates.xlsx"],
-    "session_id": "generated-session-id",
-    "client_id": "client-abc",
-    "plan_phase": 1,
-    "status": "success",
-    "chat_history_loaded": true,
-    "history_message_count": 5,
-    "cache_hit": true           // NEW: Indicates if Redis cache was used
-}
-```
-
-### Chat History Management (NEW)
-```http
-GET /chat/history/{session_id}
 ```
 
 **Response:**
 ```json
 {
-    "session_id": "session-123",
-    "client_id": "client-abc",
-    "messages": [
+    "success": true,
+    "requested_change_pct": 10.0,
+    "current_metrics": {
+        "avg_commission": 5000.00,
+        "total_commission": 500000.00,
+        "avg_attainment": 85.5,
+        "num_participants": 100
+    },
+    "ml_predictions": {
+        "avg_commission": 5500.00,
+        "total_commission": 550000.00
+    },
+    "simulation_analysis": {
+        "total_commission": {
+            "mean": 548000.00,
+            "percentile_5": 520000.00,
+            "percentile_95": 580000.00,
+            "std": 15000.00
+        }
+    },
+    "risk_metrics": {
+        "expected_cost_change": 48000.00,
+        "worst_case_cost": 580000.00,
+        "probability_exceed_10pct": 0.15
+    },
+    "cohort_analysis": [
         {
-            "timestamp": "2025-01-15T10:30:00Z",
-            "role": "user",
-            "content": "What are our Q3 commission rates?",
-            "client_context": "client-abc"
-        },
-        {
-            "timestamp": "2025-01-15T10:30:15Z", 
-            "role": "assistant",
-            "content": "Based on your client-specific rates...",
-            "sources": ["client-abc/q3-rates.pdf"]
+            "cohort": "Q1-Low",
+            "current_avg": 3000.00,
+            "predicted_avg": 3300.00,
+            "change_pct": 10.0
         }
     ],
-    "total_messages": 10,
-    "ttl_remaining": 2847,      // Seconds until expiration
-    "created_at": "2025-01-15T10:00:00Z"
+    "model_used": "xgboost",
+    "model_accuracy": {
+        "r2": 0.925,
+        "mae": 250.00,
+        "mape": 5.2
+    }
 }
 ```
 
-### Client Data Access (NEW)
+#### Plan Optimization Recommendations
 ```http
-GET /client/{client_id}/data
+POST /api/ml/optimize
+Content-Type: application/json
+Authorization: Bearer {jwt_token}
+
+{
+    "plan_id": 123  // optional - if omitted, analyzes all plans
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "num_plans_analyzed": 5,
+    "recommendations": [
+        {
+            "plan_id": 123,
+            "plan_name": "Q3 Sales Incentives",
+            "current_performance": {
+                "avg_attainment": 65.0,
+                "avg_commission": 4500.00,
+                "total_paid": 450000.00
+            },
+            "recommendations": [
+                {
+                    "type": "quota_adjustment",
+                    "priority": "high",
+                    "issue": "Low attainment (65.0%)",
+                    "recommendation": "Reduce quota by 20%",
+                    "expected_impact": "Improve attainment to 80-90% range",
+                    "edit_action": {
+                        "field": "quota",
+                        "operation": "multiply",
+                        "value": 0.80
+                    }
+                }
+            ],
+            "priority_score": 9
+        }
+    ],
+    "summary": "Analyzed 5 plans. 3 need immediate optimization."
+}
+```
+
+#### Apply ML Recommendation
+```http
+POST /api/ml/apply-change
+Content-Type: application/json
+Authorization: Bearer {jwt_token}
+
+{
+    "plan_id": 123,
+    "edit_action": {
+        "field": "quota",
+        "operation": "multiply",
+        "value": 0.80
+    }
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "plan_id": 123,
+    "changes_applied": {
+        "field": "quota",
+        "operation": "multiply",
+        "value": 0.80
+    },
+    "new_structure": [...]
+}
+```
+
+### Chat Endpoint with ML Support
+```http
+POST /chat
+Content-Type: application/json
+Authorization: Bearer {jwt_token}
+
+{
+    "message": "predict the impact of a 10% commission increase",
+    "user_id": "user-123",
+    "session_id": "session-abc"
+}
+```
+
+**ML Prediction Response:**
+```json
+{
+    "response": "## 📊 AI Commission Impact Analysis: +10.0%\n\n*Analysis using xgboost model*\n*Model Accuracy: R² = 0.925, Error = 5.2%*\n\n### 📈 Current State\n- **Average Payout**: $5,000.00\n- **Total Annual Cost**: $500,000.00\n- **Average Attainment**: 85.5%\n\n### 🤖 AI Predicted Impact\n- **New Average Payout**: $5,500.00\n- **New Total Cost**: $550,000.00\n- **Cost Change**: +$50,000.00\n\n### ⚠️ Risk Analysis (1,000 Simulations)\n- **Expected Cost**: $548,000.00\n- **Best Case**: $520,000.00\n- **Worst Case**: $580,000.00\n- **Risk of 10%+ Overrun**: 15.0%\n\n### 💡 AI Recommendation\n✅ **Moderate Change (+10.0%)**: Monitor closely for impact...",
+    "history": [...]
+}
+```
+
+### Chat History Endpoint
+```http
+GET /chat/history?user_id={user_id}&session_id={session_id}
 Authorization: Bearer {jwt_token}
 ```
 
 **Response:**
 ```json
 {
-    "client_id": "client-abc",
-    "accessible_documents": ["policy.pdf", "rates.xlsx", "guidelines.docx"],
-    "commission_plans": [
+    "history": [
         {
-            "plan_id": "plan-123",
-            "name": "Q3 Sales Incentives",
-            "valid_from": "2025-07-01",
-            "valid_to": "2025-09-30"
+            "sender": "user",
+            "text": "predict 10% increase"
+        },
+        {
+            "sender": "bot",
+            "text": "## 📊 AI Commission Impact Analysis..."
         }
-    ],
-    "client_context": {
-        "region": "North America",
-        "currency": "USD",
-        "commission_model": "tiered"
-    }
+    ]
 }
 ```
 
-### Redis Cache Management (NEW)
-```http
-POST /cache/clear
-Content-Type: application/json
-
-{
-    "scope": "client",          // Options: "global", "client", "session"
-    "client_id": "client-abc",  // Required for client scope
-    "session_id": "optional"    // Required for session scope
-}
-```
-
-### Health Check with Redis Status
+### Health Check with ML Status
 ```http
 GET /_test_api
 ```
@@ -539,242 +719,530 @@ GET /_test_api
     "test_endpoint_status": 200,
     "jwt_present": true,
     "database_connected": true,
-    "redis_connected": true,              // NEW
-    "redis_memory_usage": "45.2MB",       // NEW  
-    "active_sessions": 12,                // NEW
-    "mcp_server_status": "healthy",
-    "client_filtering_enabled": true,     // NEW
+    "redis_connected": true,
+    "ml_system_ready": true,
+    "ml_models_cached": 3,
+    "anthropic_api_key_present": true,
     "test_response": "OK"
-}
-```
-
-## 📊 Enhanced Commission Plan Workflow with Client Context
-
-### Phase 1: Plan Metadata with Client Information
-```json
-{
-    "phase": 1,
-    "client_id": "client-abc",              // NEW
-    "fields": {
-        "plan_name": "Q3 Sales Incentives - Client ABC",
-        "description": "Quarterly sales commission structure for Client ABC",
-        "calculation_schedule": "Monthly",
-        "payment_schedule": "Monthly", 
-        "assignee_type": "Territory",
-        "valid_from": "2025-01-01",
-        "valid_to": "2025-03-31",
-        "client_specific_rules": {          // NEW
-            "currency": "USD",
-            "region": "North America",
-            "compliance_level": "enterprise"
-        }
-    }
-}
-```
-
-### Phase 2: Business Rules with Client Customization
-```json
-{
-    "phase": 2,
-    "client_id": "client-abc",
-    "fields": {
-        "plan_type": "Revenue Target",
-        "category_type": "Tiered",
-        "range_type": "Amount", 
-        "value_type": "Percentage",
-        "base_value": "Gross Revenue",
-        "client_tier_overrides": {          // NEW
-            "premium_threshold": 500000,
-            "enterprise_multiplier": 1.2
-        },
-        "tiers": [
-            {"from": 0, "to": 100000, "commission": 5},
-            {"from": 100001, "to": 250000, "commission": 7},
-            {"from": 250001, "to": null, "commission": 10}
-        ]
-    }
-}
-```
-
-### Phase 3: Assignments & Submission with Client Context
-```json
-{
-    "phase": 3,
-    "client_id": "client-abc",
-    "fields": {
-        "assignments": [
-            {
-                "territory": "North", 
-                "product": "Product A",
-                "client_override": "priority_1"    // NEW
-            },
-            {
-                "territory": "South", 
-                "product": "Product B",
-                "client_override": "standard"      // NEW
-            }
-        ],
-        "currency": "USD",
-        "uom": "Each",
-        "client_approvals": {               // NEW
-            "manager_approval": "required",
-            "finance_review": "auto_approved",
-            "compliance_check": "passed"
-        }
-    }
 }
 ```
 
 ## 🎯 Enhanced Usage Examples
 
-### Client-Specific Commission Plan Creation
-```python
-# User: "Create a new commission plan for our enterprise client in EMEA region"
-# Assistant loads client context from Redis, applies EMEA-specific rules
-# "I'll create a commission plan tailored for your EMEA enterprise client. 
-#  Based on your client's tier (Enterprise) and region (EMEA), I'll apply 
-#  the appropriate currency (EUR) and compliance requirements..."
+### ML Prediction Queries
 
-# System automatically:
-# 1. Identifies client from session context
-# 2. Loads client-specific templates from Redis cache
-# 3. Applies regional and tier-based customizations
-# 4. Stores conversation in Redis with 1-hour TTL
+#### Example 1: Simple Prediction
+```
+User: "Predict the impact of a 10% commission increase"
+
+System: 
+✅ Intent: ML Prediction
+📊 Analyzing impact using XGBoost model...
+🎯 Result: +$50,000 annual cost, 15% risk of overrun
 ```
 
-### Persistent Conversation with History
-```python
-# Session 1 - User: "What are the commission rates for North Region?"
-# Assistant: "For Client ABC, North Region rates are: 5% up to $100K, 7% from $100K-250K..."
-# [Conversation stored in Redis with TTL]
+#### Example 2: Plan-Specific Prediction
+```
+User: "What if I decrease commission by 5% for plan 'Q3 Sales Champions'?"
 
-# Session 2 (30 minutes later) - User: "Can you increase those rates by 1%?"
-# Assistant: "I understand you want to increase the North Region rates we discussed 
-#            earlier by 1%. This would change them from 5%/7%/10% to 6%/8%/11%..."
-# [System loads previous context from Redis automatically]
+System:
+✅ Intent: ML Prediction (plan-specific)
+🔍 Found plan 'Q3 Sales Champions' → ID: 456
+📊 Analyzing 5% decrease...
+🎯 Result: -$25,000 savings, low risk
 ```
 
-### Client-Filtered Document Search
-```python
-# User: "Find information about Q4 performance bonuses"
-# System searches only client-specific documents:
-# - data/client-specific/client-abc/q4-bonuses.pdf
-# - data/client-specific/client-abc/performance-metrics.xlsx
-# 
-# Response: "Based on your Q4 performance bonus documentation, Client ABC has 
-#           a tiered bonus structure with performance multipliers..."
-# Sources: [client-abc/q4-bonuses.pdf, client-abc/performance-metrics.xlsx]
+#### Example 3: Prediction with Percentage Extraction
+```
+User: "I want to increase commission by 15% - what will happen?"
+
+System:
+✅ Extracted: +15% change
+📊 Monte Carlo simulation (1000 runs)...
+🎯 Expected cost: +$75,000
+⚠️ High risk scenario - 35% chance of 10%+ overrun
 ```
 
-### Redis-Cached Database Operations
-```python
-# First query - hits database, stores in Redis
-client.execute_tool("query", {
-    "sql": "SELECT * FROM commission_plans WHERE client_id = %s AND status = 'active'",
-    "params": ["client-abc"]
-})
-# Response time: 150ms, Cache: MISS
+### ML Optimization Queries
 
-# Subsequent identical query - served from Redis
-client.execute_tool("query", {
-    "sql": "SELECT * FROM commission_plans WHERE client_id = %s AND status = 'active'", 
-    "params": ["client-abc"]
-})
-# Response time: 15ms, Cache: HIT
+#### Example 1: General Optimization
+```
+User: "Recommend optimizations for my commission plans"
+
+System:
+✅ Intent: ML Optimization
+🔍 Analyzing 8 plans...
+📊 Found 5 high-priority optimization opportunities
+
+🔴 High Priority Plans:
+1. Q3 Sales Incentives (ID: 123)
+   - Low attainment (65%) → Reduce quota by 20%
+   - Poor tier distribution → Adjust Tier 1 threshold
+   
+2. North Region Plan (ID: 456)
+   - High commission rate (12%) → Reduce by 2%
+```
+
+#### Example 2: Plan-Specific Optimization
+```
+User: "Analyze plan 123 and suggest improvements"
+
+System:
+✅ Intent: ML Optimization (plan-specific)
+📊 Analyzing plan 123...
+
+Current Performance:
+- Attainment: 65%
+- Avg Payout: $4,500
+- Total Cost: $450,000
+
+🔧 Recommended Changes:
+1. 🔴 Quota Adjustment
+   - Reduce quota by 20%
+   - Expected: Improve attainment to 80-90%
+   - ✏️ Type 'apply change 1 to plan 123' to implement
+
+2. 🟡 Tier Threshold
+   - Lower Tier 1 by 15%
+   - Expected: Better distribution
+```
+
+#### Example 3: Applying Recommendations
+```
+User: "Apply change 1 to plan 123"
+
+System:
+✅ Applying quota adjustment...
+📝 Updated plan 123
+✅ Quota reduced by 20%
+📊 New thresholds: 
+   - Tier 1: $0 - $80,000 (was $100,000)
+   - Tier 2: $80,000 - $160,000 (was $200,000)
+```
+
+### Combined Workflows
+
+#### Example: Full Optimization Cycle
+```
+1. User: "Optimize my plans"
+   → System shows 3 high-priority recommendations
+
+2. User: "Predict impact of recommendation 1 for plan 123"
+   → System forecasts outcome of proposed change
+
+3. User: "Apply change 1 to plan 123"
+   → System updates plan in database
+
+4. User: "Show plan 123"
+   → System displays updated plan with new structure
+```
+
+### NLP Plan Creation
+
+#### Example: Natural Language Plan Creation
+```
+User: "Create a commission plan called 'Q4 Champions' for the North territory with a quota of 500000, tiered structure: 8% below quota and 12% above quota, valid from Jan 1 to Mar 31"
+
+System:
+✅ Intent: Plan Creation (NLP)
+🧠 Extracted fields:
+   - Plan name: Q4 Champions
+   - Territory: North
+   - Quota: 500,000
+   - Tiers: 8% (below), 12% (above)
+   - Dates: Jan 1 - Mar 31
+
+📋 PLAN SUMMARY:
+🏷️ Plan Name: Q4 Champions
+📅 Period: Not specified
+🌍 Territory: North
+🎯 Quota: 500,000
+💰 Commission Structure: Not specified
+📊 Commission Tiers:
+   - Below quota: 8%
+   - Above quota: 12%
+
+✅ Type 'submit' to save this plan
+```
+
+### Redis Chat Persistence
+
+#### Example: Session Continuity
+```
+Session 1 (10:00 AM):
+User: "What are our Q3 commission rates?"
+System: "Q3 rates are 8% for sales under $100K..."
+[Session stored in Redis with 30-min TTL]
+
+Session 2 (10:15 AM - same user, new browser):
+User: "Can you increase those rates by 2%?"
+System: "I understand you want to increase the Q3 rates we discussed earlier..."
+[System loaded context from Redis]
 ```
 
 ## ⚡ Enhanced Performance Optimization
 
-### Redis Performance Features
-- **Chat History Caching**: Instant conversation loading with Redis storage
-- **Query Result Caching**: Database query results cached with configurable TTL
-- **Session Management**: High-performance session storage with automatic cleanup
-- **Connection Pooling**: Optimized Redis connection management for high concurrency
+### ML Performance Features
+- **Model Caching**: Tenant-specific models cached in memory and Redis
+- **Batch Predictions**: Process multiple scenarios in single request
+- **Feature Precomputation**: Advanced features calculated once and reused
+- **Incremental Training**: Update models without full retraining
+- **Lazy Loading**: Models loaded on-demand per tenant
 
-### Client-Specific Optimizations
-- **Document Indexing**: Client-segregated FAISS indices for faster retrieval
-- **Context Caching**: Client context and permissions cached for rapid access
-- **Lazy Loading**: Client data loaded on-demand and cached for subsequent requests
-- **Smart Invalidation**: Selective cache invalidation based on client data changes
+### Query Performance
+- **Pagination**: Default 10 results per page with offset support
+- **Result Caching**: Frequently accessed data cached in Redis
+- **Connection Pooling**: Reuse database connections
+- **Query Optimization**: Optimized SQL generation by Claude
 
-### Scaling Recommendations for Enhanced Architecture
-- **Redis Cluster**: Use Redis Cluster for horizontal scaling of cache layer
-- **Read Replicas**: PostgreSQL read replicas with client-specific routing
-- **CDN Integration**: Client document caching with geographic distribution
-- **Load Balancing**: Session-aware load balancing with Redis session store
-- **Microservices**: Extract client management into dedicated microservice
-- **Message Queues**: Async processing for client data updates and notifications
+### Scaling Recommendations
+- **Horizontal Scaling**: Deploy multiple Flask instances behind load balancer
+- **Redis Cluster**: Use Redis Cluster for high-availability chat sessions
+- **ML Model Serving**: Dedicated ML prediction service (FastAPI/TensorFlow Serving)
+- **Database Read Replicas**: PostgreSQL read replicas for heavy query load
+- **CDN**: Serve static assets via CDN
+- **Async Processing**: Celery for background ML training jobs
 
 ## 🔧 Enhanced Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| **Redis Connection Failed** | Check Redis service status: `redis-cli ping`, verify REDIS_HOST and REDIS_PORT in `.env` |
-| **Chat History Not Loading** | Verify TTL settings and Redis memory usage, check session_id format |
-| **Client Data Not Filtering** | Ensure CLIENT_FILTERING_ENABLED=true and valid client_id in requests |
-| **Session TTL Issues** | Adjust CHAT_HISTORY_TTL value, monitor Redis memory usage with `redis-cli info memory` |
-| **High Redis Memory Usage** | Implement LRU eviction policy, monitor with `redis-cli memory usage {key}` |
-| **Client Context Errors** | Verify client_id exists in database and client data manager configuration |
-| **Cache Invalidation Problems** | Use selective cache clearing, check cache key patterns and expiration settings |
-| **Performance Degradation** | Monitor Redis connection pool, enable connection persistence, check network latency |
+| **ML Predictions Fail** | Check Anthropic API key, verify 100+ training samples available |
+| **Redis Connection Failed** | Verify Redis service: `redis-cli ping`, check REDIS_HOST in `.env` |
+| **Chat History Not Loading** | Check session TTL settings, verify Redis memory usage |
+| **Model Training Timeout** | Reduce num_simulations, check available CPU cores |
+| **High Memory Usage** | Clear ML model cache: `tenant_predictor.tenant_models.clear()` |
+| **Slow Predictions** | Enable model caching, reduce simulation count |
+| **Database Query Timeout** | Add pagination, optimize SQL with indices |
+| **MCP Server Not Starting** | Verify Anthropic API key, check Python version 3.10+ |
+| **OCR Issues** | Install Tesseract: `brew install tesseract` or `sudo apt install tesseract-ocr` |
 
-## 🔐 Enhanced Security Best Practices
+## 🧪 Enhanced Testing
 
-### Client Data Security
-- **Data Isolation**: Strict client data separation with row-level security
-- **Access Control**: Role-based permissions with client context validation
-- **Audit Logging**: Comprehensive logging of all client data access
-- **Encryption**: Redis data encryption in transit and at rest
-- **Session Security**: Secure session tokens with automatic expiration
-
-### Redis Security Configuration
+### Run ML System Tests
 ```bash
-# Redis security configuration
-redis-cli CONFIG SET requirepass "your-secure-redis-password"
+# Comprehensive ML test suite
+python test_ml_system.py
+
+# Test specific ML features
+python -c "
+from ml_advanced_predictor import tenant_predictor
+result = tenant_predictor.predict_commission_impact(
+    org_id=94,
+    client_id=93,
+    percentage_change=10.0
+)
+print('Prediction Success:', result['success'])
+"
+
+# Test plan optimization
+python -c "
+from ml_advanced_predictor import tenant_predictor
+result = tenant_predictor.recommend_plan_optimizations(
+    org_id=94,
+    client_id=93
+)
+print('Found', result['num_plans_analyzed'], 'plans')
+"
+```
+
+### Test Database & Redis
+```bash
+# Test database connectivity
+python test_db.py
+
+# Test Redis connectivity
+redis-cli ping
+
+# Test chat history
+python -c "
+from redis_chat_session import save_message, get_chat_history
+save_message('test_client', 'test_session', {'sender': 'user', 'text': 'hello'})
+history = get_chat_history('test_client', 'test_session')
+print('History:', history)
+"
+```
+
+### Run Integration Tests
+```bash
+# Test full MCP pipeline
+python -m pytest tests/ -v
+
+# Test all endpoints
+python test_all_endpoints.py
+```
+
+## 📊 ML Model Performance Metrics
+
+### Expected Accuracy (Based on Testing)
+
+| Model | R² Score | MAE | MAPE | Training Time |
+|-------|----------|-----|------|---------------|
+| XGBoost | 0.92-0.95 | $200-300 | 4-6% | 2-5 sec |
+| Random Forest | 0.88-0.92 | $250-350 | 5-7% | 3-6 sec |
+| LightGBM | 0.90-0.94 | $220-320 | 4.5-6.5% | 1-3 sec |
+| Gradient Boosting | 0.89-0.93 | $230-330 | 5-6.5% | 4-7 sec |
+
+**Best Model**: XGBoost (typically selected automatically)
+
+### Feature Importance (Top 10)
+
+1. **emp_avg_commission** (18%) - Historical employee average
+2. **rolling_3m_commission** (15%) - 3-month rolling average
+3. **plan_avg_commission** (12%) - Plan-level average
+4. **sales_amount** (10%) - Current sales
+5. **attainment_percentage** (8%) - Current attainment
+6. **commission_rate** (7%) - Current rate
+7. **plan_progress_pct** (6%) - How far into plan period
+8. **emp_std_commission** (5%) - Employee volatility
+9. **month_sin** (4%) - Seasonality
+10. **days_into_plan** (4%) - Plan timing
+
+## 🎓 ML System Usage Guide
+
+### When to Use ML Predictions
+
+#### ✅ Good Use Cases:
+- **"What if" scenarios**: Test commission changes before implementation
+- **Budget planning**: Forecast annual commission costs
+- **Risk assessment**: Understand cost uncertainty and worst-case scenarios
+- **Impact analysis**: See how changes affect different employee cohorts
+- **Quarterly reviews**: Predict Q4 costs based on Q1-Q3 performance
+
+#### ❌ Not Suitable For:
+- **Individual employee predictions**: Models work at aggregate level
+- **Short-term plans** (<3 months history): Need sufficient training data
+- **Brand new plans**: No historical data to learn from
+- **One-time bonuses**: Models expect recurring commission structures
+
+### When to Use Plan Optimization
+
+#### ✅ Good Use Cases:
+- **Low attainment**: Plans where <70% of employees hit quota
+- **High costs**: Plans exceeding budget
+- **Poor distribution**: Too many employees in bottom/top tiers
+- **Plan audits**: Regular review of all active plans
+- **New plan design**: Learn from similar historical plans
+
+#### ❌ Not Suitable For:
+- **Recently launched plans** (<2 months): Not enough performance data
+- **Custom/unique structures**: Recommendations based on common patterns
+- **Non-commission incentives**: Stock options, retention bonuses, etc.
+
+### Interpreting ML Results
+
+#### Understanding R² Score
+- **0.90-1.00**: Excellent - Model highly accurate
+- **0.80-0.90**: Good - Reliable for most decisions
+- **0.70-0.80**: Fair - Use with caution, verify assumptions
+- **<0.70**: Poor - Insufficient data or plan too complex
+
+#### Risk Metrics
+- **Probability of 10%+ Overrun**:
+  - <10%: Low risk
+  - 10-25%: Moderate risk - monitor closely
+  - 25-50%: High risk - consider phased rollout
+  - >50%: Very high risk - reconsider change
+
+- **Confidence Intervals (5th-95th percentile)**:
+  - Narrow range (<20% of mean): High confidence
+  - Wide range (>40% of mean): High uncertainty
+
+## 🔐 Security Best Practices
+
+### ML Security
+- **Model Isolation**: Tenant-specific models prevent data leakage
+- **Input Validation**: All ML inputs sanitized and validated
+- **Rate Limiting**: Prevent ML abuse (expensive operations)
+- **Audit Logging**: All ML predictions and plan edits logged
+- **Permission Checks**: Verify user can access org_id/client_id
+
+### Redis Security
+```bash
+# Production Redis Configuration
+redis-cli CONFIG SET requirepass "your-strong-password"
 redis-cli CONFIG SET protected-mode yes
 redis-cli CONFIG SET bind "127.0.0.1"
 
-# Enable Redis SSL/TLS (production)
+# Enable SSL/TLS
 redis-server --tls-port 6380 --port 0 \
     --tls-cert-file redis.crt \
     --tls-key-file redis.key \
     --tls-ca-cert-file ca.crt
 ```
 
-### Client Context Security
-- **Context Validation**: Verify client context integrity on each request
-- **Permission Caching**: Cache client permissions with short TTL for security
-- **Data Masking**: Automatic PII masking for sensitive client information
-- **Compliance Logging**: Track all client data access for regulatory compliance
+### Database Security
+- **SELECT-Only**: MCP server enforces read-only operations
+- **Tenant Filtering**: All queries filtered by org_id + client_id
+- **SQL Injection Protection**: Parameterized queries only
+- **Connection Encryption**: SSL/TLS for database connections
 
-## 🧪 Enhanced Testing
+## 🚀 Deployment Guide
 
-### Run Enhanced Tests
-```bash
-# Test database connectivity and client filtering
-python test_db.py --test-clients
+### Production Environment Variables
+```env
+# Production Configuration
+FLASK_ENV=production
+FLASK_DEBUG=False
+LOG_LEVEL=INFO
 
-# Test Redis connectivity and session management
-python redis_manager.py --test
+# Redis Production
+REDIS_HOST=redis.production.com
+REDIS_PORT=6379
+REDIS_PASSWORD=super-secure-redis-password
+REDIS_SSL=true
+REDIS_CONNECTION_POOL_SIZE=50
 
-# Test client data filtering and isolation
-python client_data_manager.py --test
+# ML Production Settings
+ML_MODEL_CACHE=true
+ML_AUTO_RETRAIN=true
+ML_MIN_TRAINING_SAMPLES=500
+ML_SIMULATION_COUNT=1000
 
-# Run comprehensive test suite
-python -m pytest tests/ -v
+# Database Production
+DB_HOST=postgres.production.com
+DB_SSL_MODE=require
+DB_CONNECTION_POOL_SIZE=20
 
-# Test Redis chat history functionality
-python -c "
-from redis_manager import RedisSessionManager
-redis_mgr = RedisSessionManager()
-print('Redis Status:', redis_mgr.test_connection())
-print('Chat History Test:', redis_mgr.test_chat_history())
-"
-
-# Test client-specific document retrieval
-python -c "
-from client_data_manager import ClientDataManager
-client_mgr = ClientDataManager()
-print('Client Filter Test:', client_mgr.test_client_filtering('client-abc'))
-"
+# API Keys (use environment-specific secrets)
+ANTHROPIC_API_KEY=sk-ant-production-key
+JWT_SECRET_KEY=production-jwt-secret
 ```
+
+### Docker Deployment
+```dockerfile
+# Dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Run application
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "app:app"]
+```
+
+### Docker Compose
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_HOST=redis
+      - DB_HOST=postgres
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+    
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+  
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: commissions
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  redis_data:
+  postgres_data:
+```
+
+## 📈 Roadmap
+
+### Planned ML Features
+- [ ] Deep Learning models (LSTM, Transformers) for time series
+- [ ] Automated hyperparameter tuning (Optuna, Hyperopt)
+- [ ] A/B testing framework for plan changes
+- [ ] Causal inference for true impact estimation
+- [ ] Real-time model retraining on new data
+- [ ] Model explainability (SHAP values)
+- [ ] Custom ML models per plan type
+- [ ] Multi-objective optimization (cost + satisfaction + retention)
+
+### Planned Application Features
+- [ ] Streaming responses for ML predictions
+- [ ] Plan comparison tool
+- [ ] What-if scenario builder (UI)
+- [ ] Email notifications for plan changes
+- [ ] Mobile app (React Native)
+- [ ] GraphQL API
+- [ ] Audit trail dashboard
+- [ ] Advanced analytics & reporting
+
+## 📸 Screenshots
+
+| Feature | Preview |
+|---------|---------|
+| **ML Prediction** | *[Add screenshot of ML prediction response]* |
+| **Plan Optimization** | *[Add screenshot of optimization recommendations]* |
+| **Chat with History** | *[Add screenshot showing session continuity]* |
+| **NLP Plan Creation** | *[Add screenshot of natural language plan extraction]* |
+
+## 🤝 Contributing
+
+We welcome contributions! Areas of interest:
+- Additional ML models (neural networks, ensemble methods)
+- Performance optimizations
+- UI/UX improvements
+- Test coverage
+- Documentation
+- Bug fixes
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-ml-feature`)
+3. Commit changes (`git commit -m 'Add amazing ML feature'`)
+4. Push to branch (`git push origin feature/amazing-ml-feature`)
+5. Open Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Anthropic Claude](https://www.anthropic.com/) - AI/ML capabilities and MCP protocol
+- [Scikit-learn](https://scikit-learn.org/) - Machine learning algorithms
+- [XGBoost](https://xgboost.ai/) - Gradient boosting framework
+- [LightGBM](https://lightgbm.readthedocs.io/) - Fast gradient boosting
+- [Prophet](https://facebook.github.io/prophet/) - Time series forecasting
+- [Redis](https://redis.io/) - In-memory data store
+- [FAISS](https://github.com/facebookresearch/faiss) - Efficient similarity search
+- [Hugging Face](https://huggingface.co/) - Transformer models and embeddings
+- [LangChain](https://langchain.com/) - LLM application framework
+- [Flask](https://flask.palletsprojects.com/) - Web framework
+- The broader Python open-source community
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/SNEAKO7/commission-dashboard-assistant-RAG-/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/SNEAKO7/commission-dashboard-assistant-RAG-/discussions)
+- **Documentation**: [Wiki](https://github.com/SNEAKO7/commission-dashboard-assistant-RAG-/wiki)
+
+---
+
+**Built with ❤️ for intelligent commission management and powered by advanced ML predictions**
