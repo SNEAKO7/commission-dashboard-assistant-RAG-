@@ -31,6 +31,11 @@ from rag import retrieve_context, clear_vector_cache
 from redis_chat_session import save_message, get_chat_history, clear_chat_history
 import redis
 
+#for prediction analysis
+from ml_handler import handle_ml_request
+from intent_detection import is_ml_prediction_intent, is_ml_optimization_intent, extract_ml_params
+from plan_editor import plan_editor
+
 # --- Setup & config ---
 load_dotenv()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -51,6 +56,16 @@ else:
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = True #False
 app.config["SESSION_USE_SIGNER"] = True
+
+# ========== ML SYSTEM AUTO-INITIALIZATION ==========
+logger.info("🤖 Initializing ML Prediction System...")
+try:
+    from ml_advanced_predictor import tenant_predictor
+    logger.info("✅ ML Predictor loaded and ready")
+except Exception as e:
+    logger.error(f"❌ ML Predictor initialization failed: {e}")
+# ====================================================
+
 app.permanent_session_lifetime = timedelta(hours=2)
 Session(app)
 
@@ -555,270 +570,6 @@ def start_plan_creation_session():
     session.modified = True
 
 # --- Flow handler (core) - COMPLETE PLAN CREATION LOGIC ---
-
-'''def handle_message_in_flow(user_msg):
-    """
-    Handle wizard continuation - process user input in plan creation mode
-    Returns: dict with 'response' key
-    """
-    logger.info(f"[WIZARD] Processing continuation message: {user_msg}")
-    
-    # Get current plan data
-    plan_data = session.get('plan_data', {})
-    logger.info(f"[WIZARD] Current plan data: {plan_data}")
-    
-    # Check if this is NLP-based plan creation (has plan_data)
-    if plan_data:
-        # NLP-based continuation
-        user_msg_lower = user_msg.lower().strip()
-        
-        # Check if user wants to submit
-        if any(word in user_msg_lower for word in ['submit', 'save', 'confirm', 'yes', 'looks good', 'correct']):
-            # Check if we have minimum required fields
-            required_fields = ['plan_name']  # Minimum required
-            missing_required = [f for f in required_fields if not plan_data.get(f)]
-            
-            if missing_required:
-                return {
-                    "response": f"Cannot submit yet. Plan name is required. Please provide a plan name first."
-                }
-            
-            # Build and submit the plan
-            try:
-                # Submit to API
-                resp = post_program_creation(plan_data)
-                
-                # Clear session on success
-                if isinstance(resp, dict) and not resp.get("error"):
-                    jwt = session.get("jwt_token")
-                    session.clear()
-                    if jwt:
-                        session["jwt_token"] = jwt
-                    
-                    return {
-                        "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully!\n\nYou can now create another plan or ask me questions about existing plans."
-                    }
-                else:
-                    error_msg = resp.get('error', 'Unknown error') if isinstance(resp, dict) else str(resp)
-                    return {
-                        "response": f"❌ Error saving plan: {error_msg}\n\nPlease check the details and try again, or type 'edit' to modify the plan."
-                    }
-                    
-            except Exception as e:
-                logger.error(f"[WIZARD] Error submitting plan: {e}")
-                return {
-                    "response": f"❌ Error saving plan: {str(e)}\n\nPlease try again or contact support."
-                }
-        
-        # Check if user wants to edit
-        if any(word in user_msg_lower for word in ['edit', 'change', 'modify', 'update']):
-            # If just "edit" with no details, ask what to change
-            if user_msg_lower.strip() in ['edit', 'modify', 'change', 'update']:
-                return {
-                    "response": "What would you like to change? Please specify the field and new value.\n\nExample: 'Change plan name to Q4 Sales Champions' or 'Update commission to 10%'"
-                }
-            
-            # Try to extract field and value from edit commands
-            field_updated = False
-            
-            # Improved patterns to handle multi-word field names
-            patterns = [
-                r'change\s+(?:the\s+)?(.+?)\s+to\s+(.+)',  # "change [the] plan name to X"
-                r'update\s+(?:the\s+)?(.+?)\s+to\s+(.+)',  # "update [the] commission to X"
-                r'(.+?)\s*=\s*(.+)',                        # "plan_name = X"
-                r'(.+?)\s*:\s*(.+)'                         # "plan_name: X"
-            ]
-            
-            import re
-            for pattern in patterns:
-                match = re.search(pattern, user_msg_lower)
-                if match:
-                    raw_field = match.group(1).strip()
-                    value = match.group(2).strip()
-                    
-                    # Clean up field name - remove articles and extra spaces
-                    raw_field = raw_field.replace('the ', '').replace(' ', '_')
-                    
-                    # Map common field variations to actual field names
-                    field_map = {
-                        'name': 'plan_name',
-                        'plan_name': 'plan_name',
-                        'period': 'plan_period',
-                        'plan_period': 'plan_period',
-                        'commission': 'commission_structure',
-                        'commission_structure': 'commission_structure',
-                        'bonus': 'bonus_rules',
-                        'bonus_rules': 'bonus_rules',
-                        'target': 'sales_target',
-                        'sales_target': 'sales_target',
-                        'quota': 'quota',
-                        'territory': 'territory',
-                        'tiers': 'tiers',
-                        'effective_dates': 'effective_dates'
-                    }
-                    
-                    field = field_map.get(raw_field)
-                    
-                    if field:
-                        # Store old value for display
-                        old_value = plan_data.get(field, 'Not set')
-                        
-                        # Update the field based on type
-                        if field in ['quota', 'sales_target']:
-                            # Convert to integer for numeric fields
-                            try:
-                                plan_data[field] = int(value.replace(',', '').replace('$', ''))
-                            except:
-                                plan_data[field] = value
-                        else:
-                            # For text fields, preserve original case from user input
-                            # Extract the actual value from original message (not lowercase)
-                            original_match = re.search(pattern.replace('(.+?)', '(.+?)').replace('(.+)', '(.+)'), user_msg, re.IGNORECASE)
-                            if original_match:
-                                plan_data[field] = original_match.group(2).strip()
-                            else:
-                                plan_data[field] = value
-                        
-                        session['plan_data'] = plan_data
-                        session.modified = True
-                        field_updated = True
-                        
-                        logger.info(f"[WIZARD] Updated {field} from '{old_value}' to '{plan_data[field]}'")
-                        
-                        # Show updated summary
-                        summary = format_plan_summary(plan_data)
-                        return {
-                            "response": f"✏️ Updated {field.replace('_', ' ')} from '{old_value}' to: {plan_data[field]}\n\n{summary}\n\n✅ Type 'submit' to save this plan, or 'edit' to make more changes."
-                        }
-                    else:
-                        logger.warning(f"[WIZARD] Could not map field '{raw_field}' to a known field")
-                        break
-            
-            if not field_updated:
-                # Couldn't parse the edit command
-                return {
-                    "response": "I couldn't understand what you want to change. Please use format like:\n- 'Change plan name to Q4 Champions'\n- 'Change the commission to 10%'\n- 'Update quota to 500000'\n- 'plan_name = Q4 Champions'"
-                }
-
-        # Manual parsing for common patterns when NLP extraction fails
-        # Parse the continuation message manually for common fields
-        if not user_msg_lower.startswith(('change', 'update', 'edit')):
-            import re
-            
-            # Extract Q4 2025 type patterns
-            period_match = re.search(r'(Q[1-4]\s*\d{4})', user_msg, re.IGNORECASE)
-            if period_match:
-                plan_data['plan_period'] = period_match.group(1)
-            
-            # Extract quota
-            quota_match = re.search(r'quota[\s:]*(\d+)', user_msg, re.IGNORECASE)
-            if quota_match:
-                plan_data['quota'] = int(quota_match.group(1))
-            
-            # Extract target
-            target_match = re.search(r'target[\s:]*(\d+)', user_msg, re.IGNORECASE)
-            if target_match:
-                plan_data['sales_target'] = int(target_match.group(1))
-            
-            # Extract tiered structure
-            if 'tiered' in user_msg_lower or '%' in user_msg:
-                tiers = []
-                # Look for patterns like "5% below quota, 10% above quota"
-                tier_patterns = re.findall(r'(\d+)%\s*(below|above|for|at|over)?\s*(quota|target|\d+)?', user_msg, re.IGNORECASE)
-                for rate, condition, threshold in tier_patterns:
-                    tier_info = {'rate': f"{rate}%"}
-                    if condition:
-                        if 'below' in condition.lower():
-                            tier_info['threshold'] = 'Below quota'
-                        elif 'above' in condition.lower() or 'over' in condition.lower():
-                            tier_info['threshold'] = 'Above quota'
-                    tiers.append(tier_info)
-                if tiers:
-                    plan_data['tiers'] = tiers
-            
-            # Extract bonus rules
-            bonus_match = re.search(r'bonus\s+(\d+)\s+for\s+exceeding\s+(\d+)%?', user_msg, re.IGNORECASE)
-            if bonus_match:
-                plan_data['bonus_rules'] = f"${bonus_match.group(1)} bonus for exceeding {bonus_match.group(2)}% of target"
-            
-            # Extract dates
-            date_pattern = r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s+(?:to|through|-)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s+\d{4}'
-            date_match = re.search(date_pattern, user_msg, re.IGNORECASE)
-            if date_match:
-                # Parse the dates
-                date_str = date_match.group(0)
-                # Simple date parsing - you might want to use dateutil for better parsing
-                parts = re.split(r'\s+(?:to|through|-)\s+', date_str, re.IGNORECASE)
-                if len(parts) == 2:
-                    plan_data['effective_dates'] = {
-                        'start': '2025-01-01',  # Simplified - parse properly in production
-                        'end': '2025-03-31'
-                    }
-            
-            session["plan_data"] = plan_data
-            session.modified = True
-            
-            # Show updated summary
-            summary = format_plan_summary(plan_data)
-            
-            # Check what's still missing
-            all_fields = [
-                'plan_name', 'plan_period', 'territory', 'quota', 
-                'commission_structure', 'tiers', 'bonus_rules', 
-                'sales_target', 'effective_dates'
-            ]
-            still_missing = [f for f in all_fields if not plan_data.get(f)]
-            
-            if not still_missing or len(still_missing) <= 2:
-                return {
-                    "response": f"Perfect! Here's your complete plan:\n\n{summary}\n\n✅ **Ready to submit!**\nType 'submit' to save this plan, or 'edit' to make changes."
-                }
-            else:
-                missing_str = ', '.join([f.replace('_', ' ') for f in still_missing[:3]])
-                return {
-                    "response": f"Great! I've updated your plan:\n\n{summary}\n\nℹ️ Optional fields still missing: {missing_str}\n\nYou can provide these details, type 'submit' to save with current info, or 'edit' to change existing values."
-                }
-        
-        # Otherwise, try to extract more plan details from the message using NLP
-        try:
-            result = extract_plan_struct_from_text(user_msg, mcp_client.claude_complete)
-            
-            if result["status"] == "ok" and result["extracted"]:
-                # Don't replace all data, merge intelligently
-                for key, value in result["extracted"].items():
-                    # Skip the bogus "structure" field
-                    if key == 'structure':
-                        continue
-                    if value:  # Only update non-empty values
-                        plan_data[key] = value
-                
-                session["plan_data"] = plan_data
-                session.modified = True
-                
-                logger.info(f"[WIZARD] Updated plan data: {plan_data}")
-                
-                summary = format_plan_summary(plan_data)
-                return {
-                    "response": f"Great! I've updated your plan:\n\n{summary}\n\n✅ Type 'submit' to save this plan, or 'edit' to make changes."
-                }
-            else:
-                # Couldn't extract anything meaningful - show current state
-                summary = format_plan_summary(plan_data)
-                return {
-                    "response": f"Current plan state:\n\n{summary}\n\nType 'submit' to save with current information, or provide more details."
-                }
-                
-        except Exception as e:
-            logger.error(f"[WIZARD] Error processing continuation: {e}")
-            summary = format_plan_summary(plan_data)
-            return {
-                "response": f"Current plan:\n\n{summary}\n\nType 'submit' to save or provide more details."
-            }
-    
-    # Fallback for no plan data
-    return {
-        "response": "No active plan creation session. Please type 'create plan' to start creating a new commission plan."
-    }'''
 
 def handle_message_in_flow(user_msg):
     """
@@ -2107,7 +1858,47 @@ def chat_endpoint():
             save_message(client_id, session_id, {"sender": "bot", "text": reply})
             history = get_chat_history(client_id, session_id)
             return jsonify({"response": reply, "history": history})
+
+
+
+    # ==================== ML PREDICTION & OPTIMIZATION ====================
+    
+    if is_ml_prediction_intent(user_msg) or is_ml_optimization_intent(user_msg):
+        logger.info("🤖 [ML] Processing ML prediction/optimization request")
         
+        org_id = getattr(request, "org_id", None)
+        client_id = get_client_id_for_org(org_id) if org_id else None
+        
+        if not org_id or not client_id:
+            ml_response = ("I need your organization context to generate predictions. "
+                          "Please make sure you're logged in with valid credentials.")
+        else:
+            try:
+                ml_response = handle_ml_request(user_msg, org_id, client_id)
+                
+                # Save state
+                if user_id:
+                    save_user_state(user_id, dict(session))
+                
+                # Save to Redis
+                save_message(client_id, session_id, {"sender": "bot", "text": ml_response})
+                history = get_chat_history(client_id, session_id)
+                
+                return jsonify({"response": ml_response, "history": history})
+                
+            except Exception as e:
+                logger.error(f"❌ [ML] Error: {e}", exc_info=True)
+                ml_response = (f"Sorry, I encountered an error while processing your ML request. "
+                              f"Please try again or rephrase your question.")
+        
+        # Return error response
+        if user_id:
+            save_user_state(user_id, dict(session))
+        save_message(client_id, session_id, {"sender": "bot", "text": ml_response})
+        history = get_chat_history(client_id, session_id)
+        return jsonify({"response": ml_response, "history": history})
+    
+    # ==================== END ML SECTION ====================
 
     # --- Database Query ---
     if is_database_query_intent(user_msg):
@@ -2132,6 +1923,7 @@ def chat_endpoint():
         except Exception as e:
             logger.error(f"❌ [DB] Error in database processing: {e}")
             return jsonify({"response": f"Sorry, error: {e}"})
+
 
     # --- RAG fallback ---
     logger.info("🧠 [RAG] Processing general query")
@@ -2251,6 +2043,147 @@ def login():
     session['jwt_token'] = token
     print("[DEBUG] jwt_token after setting in session:", session.get('jwt_token'))
     return jsonify({'success': True})
+
+# ADD THESE NEW ENDPOINTS before if __name__ == "__main__":
+
+@app.route("/api/ml/predict", methods=["POST"])
+@verify_jwt_token
+def api_ml_predict():
+    """
+    Direct API endpoint for ML predictions
+    
+    Body: {
+        "percentage_change": 10.0,
+        "plan_id": 123  // optional
+    }
+    """
+    try:
+        data = request.json or {}
+        percentage = data.get('percentage_change')
+        plan_id = data.get('plan_id')
+        
+        if percentage is None:
+            return jsonify({
+                'success': False,
+                'error': 'percentage_change is required'
+            }), 400
+        
+        org_id = getattr(request, "org_id", None)
+        client_id = get_client_id_for_org(org_id) if org_id else None
+        
+        if not org_id or not client_id:
+            return jsonify({
+                'success': False,
+                'error': 'Organization context required'
+            }), 401
+        
+        from ml_advanced_predictor import tenant_predictor
+        
+        result = tenant_predictor.predict_commission_impact(
+            org_id=org_id,
+            client_id=client_id,
+            percentage_change=float(percentage),
+            plan_id=plan_id,
+            num_simulations=1000
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"ML prediction API error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route("/api/ml/optimize", methods=["POST"])
+@verify_jwt_token
+def api_ml_optimize():
+    """
+    Direct API endpoint for plan optimization
+    
+    Body: {
+        "plan_id": 123  // optional
+    }
+    """
+    try:
+        data = request.json or {}
+        plan_id = data.get('plan_id')
+        
+        org_id = getattr(request, "org_id", None)
+        client_id = get_client_id_for_org(org_id) if org_id else None
+        
+        if not org_id or not client_id:
+            return jsonify({
+                'success': False,
+                'error': 'Organization context required'
+            }), 401
+        
+        from ml_advanced_predictor import tenant_predictor
+        
+        result = tenant_predictor.recommend_plan_optimizations(
+            org_id=org_id,
+            client_id=client_id,
+            plan_id=plan_id
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"ML optimization API error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route("/api/ml/apply-change", methods=["POST"])
+@verify_jwt_token
+def api_ml_apply_change():
+    """
+    Apply an ML recommendation to a plan
+    
+    Body: {
+        "plan_id": 123,
+        "edit_action": { ... }  // from ML recommendation
+    }
+    """
+    try:
+        data = request.json or {}
+        plan_id = data.get('plan_id')
+        edit_action = data.get('edit_action')
+        
+        if not plan_id or not edit_action:
+            return jsonify({
+                'success': False,
+                'error': 'plan_id and edit_action are required'
+            }), 400
+        
+        org_id = getattr(request, "org_id", None)
+        client_id = get_client_id_for_org(org_id) if org_id else None
+        
+        if not org_id or not client_id:
+            return jsonify({
+                'success': False,
+                'error': 'Organization context required'
+            }), 401
+        
+        result = plan_editor.apply_optimization(
+            org_id=org_id,
+            client_id=client_id,
+            plan_id=plan_id,
+            edit_action=edit_action
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"ML apply change API error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # --- Run server ---
 if __name__ == "__main__":
