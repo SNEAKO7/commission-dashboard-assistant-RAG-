@@ -231,7 +231,7 @@ class MCPPostgreSQLClient:
 
             # Claude generates SQL dynamically based on YOUR schema
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=500,
                 temperature=0,  # Deterministic output
                 messages=[{"role": "user", "content": prompt}]
@@ -423,7 +423,7 @@ class MCPPostgreSQLClient:
 
 
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=500,
                 temperature=0.3,
                 messages=[{"role": "user", "content": prompt}]
@@ -455,7 +455,7 @@ class MCPPostgreSQLClient:
             if not self.anthropic_client:
                 raise RuntimeError("Anthropic client not initialized")
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=max_tokens,
                 temperature=temperature,
                 messages=[{"role": "user", "content": prompt}]
