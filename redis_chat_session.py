@@ -13,7 +13,7 @@ r = redis.StrictRedis(
 def chat_key(client_id, session_id):
     return f"chat:{client_id}:{session_id}"
 
-def save_message(client_id, session_id, message_dict, session_ttl=1800):
+def save_message(client_id, session_id, message_dict, session_ttl=43200):
     key = chat_key(client_id, session_id)
     r.rpush(key, json.dumps(message_dict))
     r.expire(key, session_ttl)  # Update TTL on every message
