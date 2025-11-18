@@ -223,10 +223,28 @@ def handle_database_query(user_message: str, offset=0) -> str:
         org_id = getattr(request, 'org_id', None)
         org_code = getattr(request, 'org_code', None)
         client_id = get_client_id_for_org(org_id) if org_id else None
-        result = execute_query(user_message, org_id=org_id, client_id=client_id, offset=offset)
+        #result = execute_query(user_message, org_id=org_id, client_id=client_id, offset=offset)
+
+        # ✅ PAGINATION FIX: Inject offset hint into the message
+        if offset > 0:
+            # Tell the SQL generator to skip records
+            user_message_with_offset = f"{user_message} (skip first {offset} records, show next 10)"
+        else:
+            user_message_with_offset = user_message
+        
+        result = execute_query(user_message_with_offset, org_id=org_id, client_id=client_id, offset=offset)
 
         # Format for pretty printing, safe for end user
         formatted_response = format_query_response(result)
+
+        # ✅ ADD PAGINATION INFO to response
+        if offset > 0:
+            formatted_response = formatted_response.replace(
+                "Here are the ",
+                f"Here are the next "
+            )
+            formatted_response = f"**Showing records {offset+1}-{offset+10}:**\n\n{formatted_response}"
+
         return formatted_response
 
     except Exception as e:
@@ -663,127 +681,7 @@ def handle_message_in_flow(user_msg):
                 return {
                     "response": "Plan submission cancelled. You can continue editing or type 'submit' again when ready."
                 }
-            ''' if any(word in user_msg_lower for word in ['submit', 'save', 'confirm', 'yes', 'looks good', 'correct']):
-                # Check if we have minimum required fields
-                required_fields = ['plan_name']  # Minimum required
-                missing_required = [f for f in required_fields if not plan_data.get(f)]
-                
-                if missing_required:
-                    return {
-                        "response": f"Cannot submit yet. Plan name is required. Please provide a plan name first."
-                    }
-                
-                # Build and submit the plan
-               # Build and submit the plan
-                try:
-                    # Use your EXISTING API submission (NO hardcoded values!)
-                    resp = post_program_creation(plan_data)
-                    
-                    # Clear session on success
-                    if isinstance(resp, dict) and not resp.get("error"):
-                        jwt = session.get("jwt_token")
-                        session.clear()
-                        if jwt:
-                            session["jwt_token"] = jwt
-                        
-                        return {
-                            "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully!\n\nYou can now create another plan or ask me questions about existing plans."
-                        }
-                    else:
-                        error_msg = resp.get('error', 'Unknown error') if isinstance(resp, dict) else str(resp)
-                        return {
-                            "response": f"❌ Error saving plan: {error_msg}\n\nPlease check the details and try again, or type 'edit' to modify the plan."
-                        }
-                        
-                except Exception as e:
-                    logger.error(f"[WIZARD] Error submitting plan: {e}")
-                    return {
-                        "response": f"❌ Error saving plan: {str(e)}\n\nPlease try again or contact support."
-                    }'''
- 
-
-            ''' # Build and submit the plan
-                try:
-                    # REAL DATABASE SUBMISSION (replace the fake one)
-                    logger.info(f"[WIZARD] Submitting plan to database: {plan_data}")
-                    
-                    # Convert plan data to database format
-                    db_plan = {
-                        "program_name": plan_data.get('plan_name'),
-                        "org_id": 94,  # Your org ID
-                        "client_id": 93,  # Your client ID  
-                        "status": 1,  # Active
-                        "valid_from": "2025-01-01",  # Extract from effective_dates
-                        "valid_to": "2025-12-31",    # Extract from effective_dates
-                        "assignee_name": "System",   # Default assignee
-                        "table_name": "commission_plans",
-                        "object_type": "Plan",
-                        "created_by": user_id or "system",
-                        "created_date": datetime.now().isoformat(),
-                        "plan_details": json.dumps(plan_data)  # Store full plan as JSON
-                    }
-                    
-                    # Insert into plan_master table using your database connection
-                    import psycopg2
-                    import json
-                    from datetime import datetime
-                    
-                    # Use your existing database connection
-                    conn = psycopg2.connect(
-                        host=os.getenv('DB_HOST'),
-                        database=os.getenv('DB_NAME'), 
-                        user=os.getenv('DB_USER'),
-                        password=os.getenv('DB_PASSWORD')
-                    )
-                    
-                    cursor = conn.cursor()
-                    
-                    insert_query = """
-                        INSERT INTO plan_master (
-                            program_name, org_id, client_id, status, valid_from, valid_to,
-                            assignee_name, table_name, object_type, created_by, created_date, plan_details
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id
-                    """
-                    
-                    cursor.execute(insert_query, (
-                        db_plan["program_name"],
-                        db_plan["org_id"], 
-                        db_plan["client_id"],
-                        db_plan["status"],
-                        db_plan["valid_from"],
-                        db_plan["valid_to"],
-                        db_plan["assignee_name"],
-                        db_plan["table_name"],
-                        db_plan["object_type"],
-                        db_plan["created_by"],
-                        db_plan["created_date"],
-                        db_plan["plan_details"]
-                    ))
-                    
-                    plan_id = cursor.fetchone()[0]
-                    conn.commit()
-                    cursor.close()
-                    conn.close()
-                    
-                    logger.info(f"[WIZARD] Plan saved successfully with ID: {plan_id}")
-                    
-                    # Clear session on success
-                    jwt = session.get("jwt_token")
-                    session.clear()
-                    if jwt:
-                        session["jwt_token"] = jwt
-                    
-                    return {
-                        "response": f"✅ **SUCCESS!** \n\nYour plan '{plan_data.get('plan_name')}' has been created successfully with ID {plan_id}!\n\nYou can now create another plan or ask me questions about existing plans."
-                    }
-                        
-                except Exception as e:
-                    logger.error(f"[WIZARD] Error submitting plan to database: {e}")
-                    return {
-                        "response": f"❌ Error saving plan to database: {str(e)}\n\nPlease try again or contact support."
-                    }'''
-
+           
 
             # Check if user wants to edit
             if any(word in user_msg_lower for word in ['edit', 'change', 'modify', 'update']):
@@ -829,7 +727,13 @@ def handle_message_in_flow(user_msg):
                             'quota': 'quota',
                             'territory': 'territory',
                             'tiers': 'tiers',
-                            'effective_dates': 'effective_dates'
+                            'effective_dates': 'effective_dates',
+                            'date': 'effective_dates',           
+                            'dates': 'effective_dates',          
+                            'effective_date': 'effective_dates',  
+                            'validity': 'effective_dates',       
+                            'valid_from': 'effective_dates',     
+                            'valid_to': 'effective_dates'
                         }
                         
                         field = field_map.get(raw_field)
@@ -1005,7 +909,8 @@ def handle_message_in_flow(user_msg):
                 
                 if not still_missing or len(still_missing) <= 2:
                     return {
-                        "response": f"Perfect! Here's your complete plan:\n\n{summary}\n\n✅ **Ready to submit!**\nType 'submit' to save this plan, or 'edit' to make changes."
+                        #"response": f"Perfect! Here's your complete plan:\n\n{summary}\n\n✅ **Ready to submit!**\nType 'submit' to save this plan, or 'edit' to make changes."
+                        "response": summary
                     }
                 else:
                     missing_str = ', '.join([f.replace('_', ' ') for f in still_missing[:3]])
@@ -1024,64 +929,6 @@ def handle_message_in_flow(user_msg):
             "response": f"Sorry, there was an error processing your request. Please try again or type 'clear session' to start over."
         }
 
-'''def format_plan_summary(plan_data):
-    """Format plan data into a Markdown summary for ReactMarkdown"""
-    lines = []
-    
-    # Header (added once at the start)
-    lines.append("Perfect! Here's your complete plan:")
-    lines.append("")  # Blank line
-    lines.append("## 📋 PLAN SUMMARY")
-    lines.append("")  # Blank line after header
-    
-    field_labels = {
-        'plan_name': '📝 Plan Name',
-        'plan_period': '📅 Period',
-        'territory': '🌍 Territory',
-        'quota': '🎯 Quota',
-        'commission_structure': '💰 Commission Structure',
-        'tiers': '📊 Commission Tiers',
-        'bonus_rules': '🎁 Bonus Rules',
-        'sales_target': '📈 Sales Target',
-        'effective_dates': '📆 Effective Dates'
-    }
-    
-    for field, label in field_labels.items():
-        value = plan_data.get(field, 'Not specified')
-        
-        # Special handling for commission tiers
-        if field == 'tiers' and isinstance(value, list) and value:
-            lines.append(f"**{label}:**")
-            for tier in value:
-                if isinstance(tier, dict):
-                    threshold = tier.get('threshold', tier.get('min', 'Unknown'))
-                    rate = tier.get('rate', tier.get('commission', 'Unknown'))
-                    # Ensure rate has % sign
-                    rate_str = str(rate)
-                    if not rate_str.endswith('%'):
-                        rate_str = rate_str + '%'
-                    lines.append(f"- {threshold}: {rate_str}")
-            lines.append("")  # Blank line after bullet list
-        else:
-            # Special handling for effective dates
-            if field == 'effective_dates' and isinstance(value, dict):
-                start = value.get('start', 'Not set')
-                end = value.get('end', 'Not set')
-                value = f"{start} to {end}"
-            elif isinstance(value, list):
-                value = ', '.join(str(v) for v in value) if value else 'Not specified'
-            elif not value:
-                value = 'Not specified'
-            
-            lines.append(f"**{label}:** {value}")
-            lines.append("")  # Blank line after each field
-    
-    # Submit instructions (added once at the end)
-    lines.append("✅ Ready to submit!")
-    lines.append("Type 'submit' to save this plan, or 'edit' to make changes.")
-    
-    # Join with newlines and return
-    return "\n".join(lines)'''
 
 def format_plan_summary(plan_data, show_all_fields=False):
     """
@@ -1095,8 +942,8 @@ def format_plan_summary(plan_data, show_all_fields=False):
     
     if not show_all_fields:
         # NORMAL SUMMARY (during editing)
-        lines.append("Perfect! Here's your complete plan:")
-        lines.append("")
+        #lines.append("Perfect! Here's your complete plan:")
+        #lines.append("")
         lines.append("## 📋 PLAN SUMMARY")
         lines.append("")
         
@@ -1139,11 +986,25 @@ def format_plan_summary(plan_data, show_all_fields=False):
                             lines.append(f"- {threshold}: {rate_str}")
                     lines.append("")
             else:
-                if field == 'effective_dates':
+                '''if field == 'effective_dates':
                     if isinstance(value, dict) and any(value.values()):
                         start = value.get('start', 'Not set')
                         end = value.get('end', 'Not set')
                         value = f"{start} to {end}"
+                    else:
+                        value = '*Not specified*'''
+                if field == 'effective_dates':
+                    # ✅ FIX: Handle both dict and string formats
+                    if isinstance(value, dict):
+                        if any(value.values()):
+                            start = value.get('start', 'Not set')
+                            end = value.get('end', 'Not set')
+                            value = f"{start} to {end}"
+                        else:
+                            value = '*Not specified*'
+                    elif isinstance(value, str) and value.strip():
+                        # Already a formatted string - use as is
+                        value = value
                     else:
                         value = '*Not specified*'
                 elif isinstance(value, list):
@@ -1654,7 +1515,7 @@ def build_simple_payload_from_plan_data(plan_data):
 @verify_jwt_token
 def chat_history():
     user_id = request.args.get("user_id")
-    client_id = request.args.get("client_id")
+    #client_id = request.args.get("client_id")
     session_id = request.args.get("session_id")
 
     if not (user_id and session_id):
@@ -1662,9 +1523,7 @@ def chat_history():
     
     # Get org_id and derive client_id if not provided
     org_id = getattr(request, "org_id", None)
-    
-    if not client_id and org_id:
-        client_id = get_client_id_for_org(org_id)
+    client_id = get_client_id_for_org(org_id) if org_id else None
     
     if not client_id:
         return jsonify({"error": "Unable to determine client_id"}), 400
@@ -1731,6 +1590,8 @@ def chat_endpoint():
 
     org_id = getattr(request, "org_id", None)
     client_id = get_client_id_for_org(org_id) if org_id else None
+    # ✅ ADD THIS LINE:
+    logger.info(f"[DEBUG] Received data: {data}")
     session_id = data.get("session_id") or f"{user_id}_{int(time.time())}"
 
     logger.info(f"[DEBUG-SESSION] Using session_id: {session_id}")
@@ -1901,6 +1762,7 @@ def chat_endpoint():
     # ==================== END ML SECTION ====================
 
     # --- Database Query ---
+    
     if is_database_query_intent(user_msg):
         logger.info("🗄️ [DB] Processing database query")
 
@@ -1908,22 +1770,31 @@ def chat_endpoint():
         UM = user_msg.lower().strip()
         if "show all plans" in UM:
             reset_plan_offset()
-        elif "show more" in UM:
-            increment_plan_offset(10)  # or your preferred page size
-
+        
+        # ✅ FIX: Get CURRENT offset BEFORE incrementing
         offset = get_plan_offset()
+        
+        # Check if this is a "show more" request
+        is_pagination_request = "show more" in UM
+        
         logger.info(f"[PAGINATION] Current plan offset: {offset}")
         try:
             db_response = handle_database_query(user_msg, offset=offset)
+            
+            # ✅ FIX: Only increment AFTER successful query
+            if is_pagination_request and db_response and "error" not in db_response.lower():
+                increment_plan_offset(10)
+                logger.info(f"[PAGINATION] Incremented offset to: {get_plan_offset()}")
+            
             if user_id:
                 save_user_state(user_id, dict(session))
             save_message(client_id, session_id, {"sender": "bot", "text": db_response})
             history = get_chat_history(client_id, session_id)
             return jsonify({"response": db_response, "history": history})
+            
         except Exception as e:
             logger.error(f"❌ [DB] Error in database processing: {e}")
             return jsonify({"response": f"Sorry, error: {e}"})
-
 
     # --- RAG fallback ---
     logger.info("🧠 [RAG] Processing general query")
